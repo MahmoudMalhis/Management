@@ -313,7 +313,7 @@ const Dashboard = () => {
             {stats.recentAccomplishments.map((accomplishment) => (
               <Card
                 key={accomplishment._id}
-                className="glass-card glass-card-hover border-none md:w-[32%] w-[48%]"
+                className="glass-card glass-card-hover border-none md:w-[32%] w-full"
               >
                 <CardHeader className="p-3 pb-2">
                   <CardTitle className="text-lg glassy-text flex justify-between">
