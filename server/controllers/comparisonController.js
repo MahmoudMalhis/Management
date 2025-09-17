@@ -1,12 +1,17 @@
 const { validationResult } = require("express-validator");
 const { SavedComparison } = require("../models");
 
-exports.createComparison = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty())
-    return res.status(400).json({ success: false, errors: errors.array() });
-
+exports.createComparison = async (req, res, next) => {
+  // ✅ إضافة next
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
+    }
+
     const {
       name = "",
       employeeIds = [],
@@ -16,55 +21,81 @@ exports.createComparison = async (req, res) => {
       endDate,
     } = req.body;
 
-    const comparison = await SavedComparison.create({
-      name,
+    // ✅ تحسين معالجة التواريخ
+    const comparisonData = {
+      name: name.trim(), // ✅ تنظيف النص
       employeeIds,
-      notes,
+      notes: notes.trim(), // ✅ تنظيف النص
       range,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
       createdBy: req.user.id,
-    });
+    };
 
-    res.status(201).json({ success: true, data: comparison });
+    // ✅ إضافة التواريخ فقط إذا كانت صحيحة
+    if (startDate) {
+      comparisonData.startDate = new Date(startDate);
+    }
+    if (endDate) {
+      comparisonData.endDate = new Date(endDate);
+    }
+
+    const comparison = await SavedComparison.create(comparisonData);
+
+    res.status(201).json({
+      success: true,
+      data: comparison,
+      message: "تم إنشاء المقارنة بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    console.error("createComparison error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.listComparisons = async (req, res) => {
+exports.listComparisons = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const items = await SavedComparison.findAll({
       where: { createdBy: req.user.id },
       order: [["createdAt", "DESC"]],
     });
-    res.json({ success: true, count: items.length, data: items });
+
+    res.json({
+      success: true,
+      count: items.length,
+      data: items,
+    });
   } catch (err) {
-    console.error("listComparisons error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.getComparison = async (req, res) => {
+exports.getComparison = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const item = await SavedComparison.findOne({
       where: { _id: req.params.id, createdBy: req.user.id },
     });
-    if (!item)
-      return res.status(404).json({ success: false, message: "Not found" });
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "المقارنة غير موجودة", // ✅ رسالة بالعربية
+      });
+    }
 
     res.json({ success: true, data: item });
   } catch (err) {
-    console.error("getComparison error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.updateComparison = async (req, res) => {
+exports.updateComparison = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const updates = {};
-    const allow = [
+    const allowedFields = [
       "name",
       "notes",
       "range",
@@ -72,37 +103,64 @@ exports.updateComparison = async (req, res) => {
       "endDate",
       "employeeIds",
     ];
-    for (const k of allow) {
-      if (req.body[k] !== undefined) updates[k] = req.body[k];
+
+    // ✅ معالجة التحديثات المسموحة فقط
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        if (field === "name" || field === "notes") {
+          updates[field] = req.body[field].trim(); // ✅ تنظيف النصوص
+        } else if (field === "startDate" || field === "endDate") {
+          updates[field] = new Date(req.body[field]);
+        } else {
+          updates[field] = req.body[field];
+        }
+      }
     }
-    if (updates.startDate) updates.startDate = new Date(updates.startDate);
-    if (updates.endDate) updates.endDate = new Date(updates.endDate);
 
     const item = await SavedComparison.findOne({
       where: { _id: req.params.id, createdBy: req.user.id },
     });
+
     if (!item) {
-      return res.status(404).json({ success: false, message: "Not found" });
+      return res.status(404).json({
+        success: false,
+        message: "المقارنة غير موجودة",
+      });
     }
+
     await item.update(updates);
-    res.json({ success: true, data: item });
+
+    res.json({
+      success: true,
+      data: item,
+      message: "تم تحديث المقارنة بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    console.error("updateComparison error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.deleteComparison = async (req, res) => {
+exports.deleteComparison = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const deletedCount = await SavedComparison.destroy({
       where: { _id: req.params.id, createdBy: req.user.id },
     });
+
     if (!deletedCount) {
-      return res.status(404).json({ success: false, message: "Not found" });
+      return res.status(404).json({
+        success: false,
+        message: "المقارنة غير موجودة",
+      });
     }
-    res.json({ success: true, message: "Deleted" });
+
+    res.json({
+      success: true,
+      message: "تم حذف المقارنة بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    console.error("deleteComparison error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

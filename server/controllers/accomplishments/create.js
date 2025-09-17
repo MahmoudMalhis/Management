@@ -5,28 +5,29 @@ const {
   User,
 } = require("../../models");
 
-let io;
-try {
-  io = require("../../server").io;
-} catch {}
+// ✅ استيراد خدمة Socket المحسّنة بدلاً من الاستيراد المباشر
+const socketService = require("../../services/socketService");
 
-module.exports = async function createAccomplishment(req, res) {
+module.exports = async function createAccomplishment(req, res, next) {
+  // ✅ إضافة next
   try {
     const { description, taskTitle, employee } = req.body;
     const employeeId = req.user.role === "manager" ? employee : req.user.id;
 
+    // ✅ معالجة الملفات بطريقة أكثر أماناً
     const files = (req.files || []).map((file) => ({
       fileName: file.originalname,
       filePath: `/uploads/${file.filename}`,
       fileType: file.mimetype,
     }));
 
-    const employeeIdInt = isNaN(Number(employeeId))
-      ? employeeId
-      : Number(employeeId);
-    const taskTitleId = isNaN(Number(taskTitle))
-      ? taskTitle
-      : Number(taskTitle);
+    // ✅ تحويل الـ IDs بطريقة أكثر أماناً
+    const employeeIdInt = Number.isInteger(Number(employeeId))
+      ? Number(employeeId)
+      : employeeId;
+    const taskTitleId = Number.isInteger(Number(taskTitle))
+      ? Number(taskTitle)
+      : taskTitle;
 
     const accomplishment = await Accomplishment.create({
       description,
@@ -40,12 +41,17 @@ module.exports = async function createAccomplishment(req, res) {
       employeeFiles: req.user.role === "employee" ? files : [],
     });
 
+    // ✅ الحصول على اسم المهمة بطريقة أكثر أماناً
     let taskTitleName = "";
     try {
       const titleObj = await TaskTitle.findByPk(taskTitleId);
-      taskTitleName = titleObj ? titleObj.name : "";
-    } catch {}
+      taskTitleName = titleObj ? titleObj.name : "مهمة غير محددة";
+    } catch (error) {
+      console.error("Error fetching task title:", error);
+      taskTitleName = "مهمة غير محددة";
+    }
 
+    // ✅ إنشاء إشعار للموظف
     await Notification.create({
       user: employeeIdInt,
       type: "new_task",
@@ -53,10 +59,37 @@ module.exports = async function createAccomplishment(req, res) {
       data: { accomplishmentId: accomplishment._id, taskTitle: taskTitleName },
     });
 
-    if (io) {
-      io.to(String(employeeIdInt)).emit("notification", {
+    // ✅ إرسال إشعار Socket للموظف
+    socketService.notifyUser(employeeIdInt, {
+      type: "new_task",
+      message: `تم تعيين مهمة جديدة لك: ${taskTitleName}`,
+      data: {
+        accomplishmentId: accomplishment._id,
+        taskTitle: taskTitleName,
+      },
+    });
+
+    // ✅ إرسال إشعارات للمدراء إذا كان المنشئ موظف
+    if (req.user.role === "employee") {
+      const managers = await User.findAll({ where: { role: "manager" } });
+
+      // ✅ استخدام bulkCreate لتحسين الأداء
+      const managerNotifications = managers.map((manager) => ({
+        user: manager._id,
         type: "new_task",
-        message: `تم تعيين مهمة جديدة لك: ${taskTitleName}`,
+        message: `قام الموظف ${req.user.name} بإضافة مهمة جديدة بعنوان "${taskTitleName}"`,
+        data: {
+          accomplishmentId: accomplishment._id,
+          taskTitle: taskTitleName,
+        },
+      }));
+
+      await Notification.bulkCreate(managerNotifications);
+
+      // ✅ إرسال إشعارات Socket للمدراء
+      socketService.notifyManagers({
+        type: "new_task",
+        message: `قام الموظف ${req.user.name} بإضافة مهمة جديدة بعنوان "${taskTitleName}"`,
         data: {
           accomplishmentId: accomplishment._id,
           taskTitle: taskTitleName,
@@ -64,31 +97,7 @@ module.exports = async function createAccomplishment(req, res) {
       });
     }
 
-    if (req.user.role === "employee") {
-      const managers = await User.findAll({ where: { role: "manager" } });
-      for (const m of managers) {
-        await Notification.create({
-          user: m._id,
-          type: "new_task",
-          message: `قام الموظف ${req.user.name} بإضافة مهمة جديدة بعنوان "${taskTitleName}"`,
-          data: {
-            accomplishmentId: accomplishment._id,
-            taskTitle: taskTitleName,
-          },
-        });
-        if (io) {
-          io.to(String(m._id)).emit("notification", {
-            type: "new_task",
-            message: `قام الموظف ${req.user.name} بإضافة مهمة جديدة بعنوان "${taskTitleName}"`,
-            data: {
-              accomplishmentId: accomplishment._id,
-              taskTitle: taskTitleName,
-            },
-          });
-        }
-      }
-    }
-
+    // ✅ إرجاع البيانات مع العلاقات
     const populated = await Accomplishment.findByPk(accomplishment._id, {
       include: [
         {
@@ -96,13 +105,17 @@ module.exports = async function createAccomplishment(req, res) {
           as: "employeeInfo",
           attributes: ["_id", "name", "status"],
         },
-        { model: TaskTitle, as: "taskTitleInfo", attributes: ["_id", "name"] },
+        {
+          model: TaskTitle,
+          as: "taskTitleInfo",
+          attributes: ["_id", "name"],
+        },
       ],
     });
 
     res.status(201).json({ success: true, data: populated });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

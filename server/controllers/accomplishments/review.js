@@ -1,35 +1,41 @@
 const { Accomplishment, Notification, User } = require("../../models");
+// ✅ استيراد خدمة Socket المحسّنة
+const socketService = require("../../services/socketService");
+
+// ✅ دالة موحدة لإنشاء ID
 const generateId = () =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-let io;
-try {
-  io = require("../../server").io;
-} catch {}
 
-module.exports = async function reviewAccomplishment(req, res) {
+module.exports = async function reviewAccomplishment(req, res, next) {
+  // ✅ إضافة next
   try {
     const { status, comment } = req.body;
-    if (!["reviewed", "needs_modification"].includes(status)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: 'Invalid status. Use "reviewed" or "needs_modification"',
-        });
+
+    // ✅ التحقق من صحة حالة المراجعة
+    const validStatuses = ["reviewed", "needs_modification"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Use "reviewed" or "needs_modification"',
+      });
     }
 
     const accomplishment = await Accomplishment.findByPk(req.params.id);
-    if (!accomplishment)
-      return res
-        .status(404)
-        .json({ success: false, message: "Accomplishment not found" });
+    if (!accomplishment) {
+      return res.status(404).json({
+        success: false,
+        message: "Accomplishment not found",
+      });
+    }
 
+    // ✅ تحديث حالة الإنجاز
     accomplishment.status = status;
 
+    // ✅ إضافة تعليق إذا تم توفيره
     if (comment && comment.trim()) {
       const newComment = {
         _id: generateId(),
-        text: comment,
+        text: comment.trim(), // ✅ تنظيف النص
         commentedBy: {
           _id: req.user.id,
           name: req.user.name,
@@ -42,41 +48,42 @@ module.exports = async function reviewAccomplishment(req, res) {
           ? accomplishment.previousVersions.length
           : 0,
       };
-      const existing = accomplishment.comments || [];
-      existing.unshift(newComment);
-      accomplishment.comments = existing;
+
+      const existingComments = accomplishment.comments || [];
+      existingComments.unshift(newComment);
+      accomplishment.comments = existingComments;
     }
 
     await accomplishment.save();
 
+    // ✅ معالجة الإشعارات بناءً على نوع المراجعة
+    let notificationMessage = "";
+    let notificationType = "";
+
     if (status === "reviewed") {
-      await Notification.create({
-        user: accomplishment.employee,
-        type: "reviewed",
-        message: "تم اعتماد إنجازك من قبل المدير",
-        data: { accomplishmentId: accomplishment._id },
-      });
-      if (io)
-        io.to(String(accomplishment.employee)).emit("notification", {
-          type: "reviewed",
-          message: "تم اعتماد إنجازك من قبل المدير",
-          data: { accomplishmentId: accomplishment._id },
-        });
+      notificationMessage = "تم اعتماد إنجازك من قبل المدير";
+      notificationType = "reviewed";
     } else {
-      await Notification.create({
-        user: accomplishment.employee,
-        type: "modification_request",
-        message: "تم طلب تعديل على مهمتك",
-        data: { accomplishmentId: accomplishment._id },
-      });
-      if (io)
-        io.to(String(accomplishment.employee)).emit("notification", {
-          type: "modification_request",
-          message: "تم طلب تعديل على مهمتك",
-          data: { accomplishmentId: accomplishment._id },
-        });
+      notificationMessage = "تم طلب تعديل على مهمتك";
+      notificationType = "modification_request";
     }
 
+    // ✅ إنشاء الإشعار
+    await Notification.create({
+      user: accomplishment.employee,
+      type: notificationType,
+      message: notificationMessage,
+      data: { accomplishmentId: accomplishment._id },
+    });
+
+    // ✅ إرسال إشعار Socket
+    socketService.notifyUser(accomplishment.employee, {
+      type: notificationType,
+      message: notificationMessage,
+      data: { accomplishmentId: accomplishment._id },
+    });
+
+    // ✅ الحصول على البيانات المحدّثة مع العلاقات
     const updated = await Accomplishment.findByPk(req.params.id, {
       include: [
         {
@@ -89,7 +96,7 @@ module.exports = async function reviewAccomplishment(req, res) {
 
     res.json({ success: true, data: updated });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

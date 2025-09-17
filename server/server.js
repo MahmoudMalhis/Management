@@ -7,12 +7,16 @@ const path = require("path");
 
 const { connectDB } = require("./config/db");
 const { initDB } = require("./models");
+// ✅ استيراد معالج الأخطاء الموحد
+const errorHandler = require("./middlewares/errorHandler");
+// ✅ استيراد خدمة Socket المحسّنة
+const socketService = require("./services/socketService");
 
 const taskTitlesRoutes = require("./routes/taskTitles");
-const Notifications = require("./routes/notifications");
+const notificationsRoutes = require("./routes/notifications"); // ✅ تصحيح اسم المتغير ليكون camelCase
 const comparisonsRoutes = require("./routes/comparisons");
-const auth = require("./routes/auth");
-const accomplishments = require("./routes/accomplishments");
+const authRoutes = require("./routes/auth"); // ✅ تصحيح اسم المتغير
+const accomplishmentsRoutes = require("./routes/accomplishments"); // ✅ تصحيح اسم المتغير
 
 dotenv.config();
 
@@ -27,7 +31,8 @@ const io = new Server(server, {
   },
 });
 
-module.exports = { io };
+// ✅ تهيئة خدمة Socket بدلاً من التصدير المباشر
+socketService.initialize(io);
 
 app.use(express.json());
 app.use(
@@ -43,51 +48,16 @@ app.use(
   express.static(path.join(__dirname, "../client/public/uploads"))
 );
 
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
-
-  socket.on("joinRoom", ({ userId, role }) => {
-    if (role === "manager") socket.join("managers");
-    socket.join(String(userId));
-  });
-
-  socket.on("newAccomplishment", (data) => {
-    socket.to("managers").emit("newAccomplishmentAlert", data);
-  });
-
-  socket.on(
-    "accomplishmentStatusChanged",
-    ({ accomplishmentId, employeeId, status }) => {
-      socket
-        .to(String(employeeId))
-        .emit("accomplishmentStatusChangedAlert", { accomplishmentId, status });
-    }
-  );
-
-  socket.on("newComment", ({ accomplishmentId, employeeId }) => {
-    socket.to(String(employeeId)).emit("newCommentAlert", { accomplishmentId });
-  });
-
-  socket.on("newReply", ({ accomplishmentId, managerId }) => {
-    socket.to(String(managerId)).emit("newReplyAlert", { accomplishmentId });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
-});
-
-app.use("/api/auth", auth);
-app.use("/api/accomplishments", accomplishments);
+// ✅ تحديث أسماء المتغيرات لتكون متسقة
+app.use("/api/auth", authRoutes);
+app.use("/api/accomplishments", accomplishmentsRoutes);
 app.use("/api/task-titles", taskTitlesRoutes);
 app.use("/api/gallery", require("./routes/gallery"));
-app.use("/api/notifications", Notifications);
+app.use("/api/notifications", notificationsRoutes);
 app.use("/api/comparisons", comparisonsRoutes);
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ success: false, message: "Server Error" });
-});
+// ✅ إضافة معالج الأخطاء الموحد في النهاية
+app.use(errorHandler);
 
 (async () => {
   try {
@@ -102,3 +72,6 @@ app.use((err, req, res, next) => {
     process.exit(1);
   }
 })();
+
+// ✅ تصدير socketService بدلاً من io للاستخدام في الكنترولرز
+module.exports = { socketService };

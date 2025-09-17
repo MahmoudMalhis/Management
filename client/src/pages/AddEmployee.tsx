@@ -1,162 +1,263 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+// ✅ FIXED: تحديث AddEmployee مع جميع التحسينات المطلوبة
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { authAPI } from "@/api/api";
 import { toast } from "sonner";
+import {
+  CheckCircle,
+  AlertTriangle,
+  LucideArrowLeft,
+  LucideUserPlus,
+} from "lucide-react";
+
+// ✅ FIXED: استيراد Types والثوابت
+import { EmployeeFormData } from "@/types";
+import { ROUTES } from "@/constants";
+import { authAPI } from "@/api/api";
+import { showErrorToast } from "@/utils/errorHandler";
+import {
+  useFormValidation,
+  commonValidationRules,
+} from "@/hooks/useFormValidation";
+
+// ✅ FIXED: استيراد مكونات UI
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// Use FormCard wrapper for consistent form layout
 import FormCard from "@/components/FormCard";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  LucideArrowLeft,
-  LucideUserPlus,
-  CheckCircle,
-  AlertTriangle,
-} from "lucide-react";
 import FormActions from "@/components/FormActions";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
-const AddEmployee = () => {
+// ✅ FIXED: قواعد التحقق للنموذج
+const getValidationRules = (t: any) => ({
+  name: {
+    ...commonValidationRules.required(
+      t("employees.name") + " " + t("common.required")
+    ),
+    ...commonValidationRules.minLength(
+      2,
+      t("employees.name") + " يجب أن يكون حرفين على الأقل"
+    ),
+    ...commonValidationRules.maxLength(
+      50,
+      t("employees.name") + " يجب أن يكون 50 حرف أو أقل"
+    ),
+  },
+  password: {
+    ...commonValidationRules.password(6, t("employees.passwordMinLength")),
+  },
+  confirmPassword: {
+    ...commonValidationRules.required("تأكيد كلمة المرور مطلوب"),
+    custom: (value: string, values?: EmployeeFormData) => {
+      if (value !== values?.password) {
+        return "كلمة المرور غير متطابقة";
+      }
+      return null;
+    },
+  },
+});
+
+// ✅ FIXED: المكون الرئيسي مع التحسينات
+const AddEmployee: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  // use the toast function from sonner
 
-  const [formData, setFormData] = useState({
-    name: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // ✅ FIXED: استخدام hook التحقق من النماذج
+  const {
+    values,
+    errors,
+    isSubmitting,
+    isValid,
+    handleChange,
+    handleSubmit,
+    setFieldError,
+    getFieldProps,
+    setIsSubmitting,
+  } = useFormValidation<EmployeeFormData>(
+    {
+      name: "",
+      password: "",
+      confirmPassword: "",
+    },
+    getValidationRules(t)
+  );
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Validation
-    if (formData.password !== formData.confirmPassword) {
-      setError(
-        t("employees.confirmPassword") + " " + t("common.error").toLowerCase()
-      );
-      return;
+  // ✅ FIXED: التحقق المخصص لتطابق كلمات المرور
+  const validatePasswordConfirmation = useCallback(() => {
+    if (values.password !== values.confirmPassword && values.confirmPassword) {
+      setFieldError("confirmPassword", "كلمة المرور غير متطابقة");
+      return false;
     }
+    return true;
+  }, [values.password, values.confirmPassword, setFieldError]);
 
-    if (formData.password.length < 6) {
-      setError(t("employees.passwordMinLength"));
-      return;
-    }
+  // ✅ FIXED: معالج إرسال النموذج
+  const onSubmit = useCallback(
+    async (formData: EmployeeFormData) => {
+      // التحقق الإضافي
+      if (!validatePasswordConfirmation()) {
+        return;
+      }
 
-    try {
-      setLoading(true);
-      setError(null);
+      try {
+        setIsSubmitting(true);
 
-      await authAPI.registerEmployee(formData.name, formData.password);
+        await authAPI.registerEmployee(formData.name.trim(), formData.password);
 
-      // Show success notification
-      toast(t("common.success"), {
-        icon: <CheckCircle color="green" />,
-        description:
-          t("employees.add") + " " + t("common.success").toLowerCase(),
-      });
+        // عرض رسالة نجاح
+        toast.success(t("common.success"), {
+          icon: <CheckCircle className="text-green-500" />,
+          description: `${t("employees.add")} ${t(
+            "common.success"
+          ).toLowerCase()}`,
+        });
 
-      navigate("/employees");
-    } catch (err: any) {
-      console.error("Error registering employee:", err);
-      setError(err.message || t("common.error"));
+        // العودة لصفحة الموظفين
+        navigate(ROUTES.EMPLOYEES);
+      } catch (error) {
+        console.error("Error registering employee:", error);
+        showErrorToast(error, "فشل في إضافة الموظف");
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [validatePasswordConfirmation, setIsSubmitting, t, navigate]
+  );
 
-      toast(t("common.error"), {
-        icon: <AlertTriangle color="red" />,
-        description: err.message || t("common.error"),
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ✅ FIXED: معالج الإلغاء
+  const handleCancel = useCallback(() => {
+    navigate(ROUTES.EMPLOYEES);
+  }, [navigate]);
+
+  // ✅ FIXED: معالج تغيير كلمة المرور للتحقق من التطابق
+  const handlePasswordChange = useCallback(
+    (field: "password" | "confirmPassword") =>
+      (event: React.ChangeEvent<HTMLInputElement>) => {
+        handleChange(field)(event);
+
+        // إزالة خطأ التطابق عند تغيير أي من الحقلين
+        if (errors.confirmPassword && field === "password") {
+          setFieldError("confirmPassword", "");
+        }
+      },
+    [handleChange, handlePasswordChange, errors.confirmPassword, setFieldError]
+  );
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto p-4">
+      {/* ✅ FIXED: زر العودة مع استخدام الثوابت */}
       <Button
         variant="ghost"
         className="mb-4 flex items-center gap-1 glass-btn"
-        onClick={() => navigate("/employees")}
+        onClick={handleCancel}
       >
         <LucideArrowLeft className="h-4 w-4" />
         {t("common.back")}
       </Button>
 
-      {/* Wrap the form around the FormCard so submit works */}
-      <form onSubmit={handleSubmit}>
+      {/* ✅ FIXED: النموذج مع التحسينات */}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <FormCard
           title={t("employees.add")}
           description={t("employees.create")}
           footer={
             <FormActions
-              loading={loading}
+              loading={isSubmitting}
               cancelLabel={t("common.cancel")}
               submitLabel={t("employees.create")}
               loadingLabel={t("common.loading")}
-              onCancel={() => navigate("/employees")}
+              onCancel={handleCancel}
               submitIcon={<LucideUserPlus className="h-4 w-4" />}
             />
           }
         >
-          {error && (
+          {/* ✅ FIXED: عرض الأخطاء العامة */}
+          {Object.keys(errors).length > 0 && (
             <Alert variant="destructive" className="glass-card">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                يرجى تصحيح الأخطاء أدناه قبل المتابعة
+              </AlertDescription>
             </Alert>
           )}
+
+          {/* ✅ FIXED: حقل الاسم مع التحقق */}
           <div className="space-y-2">
             <Label htmlFor="name" className="glassy-text">
-              {t("employees.name")}
+              {t("employees.name")} *
             </Label>
             <Input
               id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleInputChange}
+              type="text"
               placeholder={t("employees.name")}
-              required
-              className="glass-input"
+              className={`glass-input ${errors.name ? "border-red-500" : ""}`}
+              disabled={isSubmitting}
+              {...getFieldProps("name")}
             />
+            {errors.name && (
+              <p className="text-sm text-red-600 mt-1">{errors.name}</p>
+            )}
           </div>
+
+          {/* ✅ FIXED: حقل كلمة المرور مع التحقق */}
           <div className="space-y-2">
             <Label htmlFor="password" className="glassy-text">
-              {t("employees.password")}
+              {t("employees.password")} *
             </Label>
             <Input
               id="password"
-              name="password"
               type="password"
-              value={formData.password}
-              onChange={handleInputChange}
               placeholder={t("employees.password")}
-              required
-              className="glass-input"
+              className={`glass-input ${
+                errors.password ? "border-red-500" : ""
+              }`}
+              disabled={isSubmitting}
+              autoComplete="new-password"
+              {...getFieldProps("password")}
+              onChange={handlePasswordChange("password")}
             />
+            {errors.password && (
+              <p className="text-sm text-red-600 mt-1">{errors.password}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {t("employees.passwordMinLength")}
+            </p>
           </div>
+
+          {/* ✅ FIXED: حقل تأكيد كلمة المرور مع التحقق */}
           <div className="space-y-2">
             <Label htmlFor="confirmPassword" className="glassy-text">
-              {t("employees.confirmPassword")}
+              {t("employees.confirmPassword")} *
             </Label>
             <Input
               id="confirmPassword"
-              name="confirmPassword"
               type="password"
-              value={formData.confirmPassword}
-              onChange={handleInputChange}
               placeholder={t("employees.confirmPassword")}
-              required
-              className="glass-input"
+              className={`glass-input ${
+                errors.confirmPassword ? "border-red-500" : ""
+              }`}
+              disabled={isSubmitting}
+              autoComplete="new-password"
+              {...getFieldProps("confirmPassword")}
+              onChange={handlePasswordChange("confirmPassword")}
             />
+            {errors.confirmPassword && (
+              <p className="text-sm text-red-600 mt-1">
+                {errors.confirmPassword}
+              </p>
+            )}
+          </div>
+
+          {/* ✅ FIXED: معلومات إضافية */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
+              ملاحظات هامة:
+            </h4>
+            <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
+              <li>• سيتم إنشاء حساب موظف جديد بصلاحيات محدودة</li>
+              <li>• يمكن للموظف تسجيل الدخول فور إنشاء الحساب</li>
+              <li>• يمكن تعديل بيانات الموظف لاحقاً من قائمة الموظفين</li>
+            </ul>
           </div>
         </FormCard>
       </form>

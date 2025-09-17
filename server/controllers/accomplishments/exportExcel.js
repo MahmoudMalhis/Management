@@ -1,18 +1,20 @@
 const ExcelJS = require("exceljs");
 const { Accomplishment, User, Op } = require("../../models");
 
-module.exports = async function exportAccomplishments(req, res) {
+module.exports = async function exportAccomplishments(req, res, next) {
+  // ✅ إضافة next
   try {
     const where = {};
     if (req.query.employee) where.employee = req.query.employee;
 
-    // اجعل endDate شاملًا لنهاية اليوم
-    const toEndOfDay = (d) => {
-      const x = new Date(d);
-      x.setHours(23, 59, 59, 999);
-      return x;
+    // ✅ دالة موحدة لجعل التاريخ شاملاً لنهاية اليوم
+    const toEndOfDay = (dateString) => {
+      const date = new Date(dateString);
+      date.setHours(23, 59, 59, 999);
+      return date;
     };
 
+    // ✅ فلترة التواريخ بطريقة محسّنة
     if (req.query.startDate && req.query.endDate) {
       where.createdAt = {
         [Op.gte]: new Date(req.query.startDate),
@@ -27,7 +29,11 @@ module.exports = async function exportAccomplishments(req, res) {
     const accomplishments = await Accomplishment.findAll({
       where,
       include: [
-        { model: User, as: "employeeInfo", attributes: ["_id", "name"] },
+        {
+          model: User,
+          as: "employeeInfo",
+          attributes: ["_id", "name", "role"], // ✅ إضافة role للثبات
+        },
       ],
       order: [["createdAt", "DESC"]],
     });
@@ -35,6 +41,7 @@ module.exports = async function exportAccomplishments(req, res) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Accomplishments");
 
+    // ✅ تحديد أعمدة الجدول بطريقة أوضح
     worksheet.columns = [
       { header: "التاريخ", key: "date", width: 15 },
       { header: "اسم الموظف", key: "employeeName", width: 20 },
@@ -44,33 +51,45 @@ module.exports = async function exportAccomplishments(req, res) {
       { header: "عدد التعليقات", key: "commentsCount", width: 15 },
     ];
 
-    accomplishments.forEach((acc) => {
+    // ✅ إضافة البيانات للجدول مع معالجة أفضل للقيم الفارغة
+    accomplishments.forEach((accomplishment) => {
       worksheet.addRow({
-        date: acc.createdAt ? acc.createdAt.toISOString().split("T")[0] : "",
-        employeeName: acc.employeeInfo ? acc.employeeInfo.name : "",
-        description: acc.description || "",
-        status: acc.status || "",
-        filesCount: Array.isArray(acc.files) ? acc.files.length : 0,
-        commentsCount: Array.isArray(acc.comments) ? acc.comments.length : 0,
+        date: accomplishment.createdAt
+          ? accomplishment.createdAt.toISOString().split("T")[0]
+          : "غير محدد",
+        employeeName: accomplishment.employeeInfo
+          ? accomplishment.employeeInfo.name
+          : "غير محدد",
+        description: accomplishment.description || "لا توجد تفاصيل",
+        status: accomplishment.status || "غير محدد",
+        filesCount: Array.isArray(accomplishment.files)
+          ? accomplishment.files.length
+          : 0,
+        commentsCount: Array.isArray(accomplishment.comments)
+          ? accomplishment.comments.length
+          : 0,
       });
     });
 
+    // ✅ تنسيق رأس الجدول
     worksheet.getRow(1).font = { bold: true };
 
-    const fileName = `accomplishments_export_${Date.now()}.xlsx`;
+    // ✅ إنشاء اسم ملف فريد ومعرف
+    const timestamp = new Date().toISOString().split("T")[0];
+    const fileName = `accomplishments_export_${timestamp}.xlsx`;
 
-    // رؤوس التحميل
+    // ✅ تحديد رؤوس الاستجابة بطريقة صحيحة
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
-    // ابثّ الملف مباشرة للمتصفح بدون حفظ
+    // ✅ إرسال الملف مباشرة للمتصفح
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

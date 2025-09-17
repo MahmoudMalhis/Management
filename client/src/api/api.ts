@@ -1,14 +1,19 @@
+// ✅ FIXED: تحديث ملف API مع توحيد معالجة الأخطاء والـ types
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
+import { 
+  ApiResponse, 
+  Employee, 
+  Accomplishment, 
+  TaskTitle,
+  EmployeeFilters,
+  AccomplishmentFilters,
+  PaginationParams 
+} from '@/types';
+import { API_URL, STORAGE_KEYS } from '@/constants';
+import { handleApiError, validateResponse } from '@/utils/errorHandler';
 
-// Base URL for API requests. Reads the base API URL from environment
-// variable `VITE_API_URL` (set by Vite) and falls back to localhost if
-// undefined. Appends `/api` automatically.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const API_BASE: string = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
-const API_URL = `${API_BASE}/api`;
-
-// Create axios instance
+// ✅ FIXED: استخدام الثوابت المعرفة في constants
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -16,260 +21,349 @@ const api = axios.create({
   }
 });
 
-// Add request interceptor for auth token
+// ✅ FIXED: تحسين request interceptor
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => {
-    return Promise.reject(error);
+    return Promise.reject(handleApiError(error));
   }
 );
 
-// Authentication API calls
+// ✅ FIXED: إضافة response interceptor لمعالجة الأخطاء بشكل موحد
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // معالجة أخطاء المصادقة
+    if (error.response?.status === 401) {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+      window.location.href = '/login';
+    }
+    return Promise.reject(handleApiError(error));
+  }
+);
+
+// ✅ FIXED: Authentication API calls مع types محددة
 export const authAPI = {
-  // Login user
-  login: async (name: string, password: string) => {
+  // ✅ FIXED: تحسين دالة تسجيل الدخول
+  login: async (name: string, password: string): Promise<ApiResponse<{ token: string; user: any }>> => {
     try {
       const response = await api.post('/auth/login', { name, password });
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      if (error.response) {
-      throw error.response.data || { message: 'Login failed' };
-    } else {
-      throw { message: 'Network error' };
-    }
+      throw handleApiError(error);
     }
   },
 
-  // Get current user
-  getCurrentUser: async () => {
+  // ✅ FIXED: تحسين دالة الحصول على المستخدم الحالي
+  getCurrentUser: async (): Promise<ApiResponse<{ user: any }>> => {
     try {
       const response = await api.get('/auth/me');
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-  // Register employee (manager only)
-  registerEmployee: async (name: string, password: string) => {
+  // ✅ FIXED: تحسين دالة تسجيل الموظفين
+  registerEmployee: async (name: string, password: string): Promise<ApiResponse<Employee>> => {
     try {
       const response = await api.post('/auth/register', { name, password });
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-  // Get all employees (manager only)
-
-  getEmployees: async (params: { status?: "active" | "archived" } = {}) => {
-    const response = await api.get("/auth/employees", { params });
-    return response.data;
+  // ✅ FIXED: تحسين دالة جلب الموظفين مع filters
+  getEmployees: async (params: EmployeeFilters = {}): Promise<ApiResponse<Employee[]>> => {
+    try {
+      const response = await api.get("/auth/employees", { params });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
 
-  unarchiveEmployee: async (id: string) => {
-    const res = await api.patch(`/auth/employees/${id}/unarchive`);
-    return res.data;
+  // ✅ FIXED: استعادة الموظف المؤرشف
+  unarchiveEmployee: async (id: string): Promise<ApiResponse<Employee>> => {
+    try {
+      const response = await api.patch(`/auth/employees/${id}/unarchive`);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
 
-getEmployeeById: async (id: string) => {
-  try {
-    const response = await api.get(`/auth/employees/${id}`);
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { message: 'Server error' };
-  }
-},
+  // ✅ FIXED: جلب موظف محدد
+  getEmployeeById: async (id: string): Promise<ApiResponse<Employee>> => {
+    try {
+      const response = await api.get(`/auth/employees/${id}`);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
-deleteEmployee: async (id: string, mode: "hard" | "archive" = "archive") => {
-  const res = await api.delete(`/auth/employees/${id}`, { params: { mode } });
-  return res.data;
-},
-
+  // ✅ FIXED: حذف الموظف مع تحديد النوع
+  deleteEmployee: async (id: string, mode: "hard" | "archive" = "archive"): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.delete(`/auth/employees/${id}`, { params: { mode } });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 };
 
-// Accomplishments API calls
+// ✅ FIXED: Accomplishments API calls مع types محددة
 export const accomplishmentsAPI = {
-  // Create new accomplishment
-  createAccomplishment: async (formData: FormData) => {
+  // ✅ FIXED: إنشاء إنجاز جديد
+  createAccomplishment: async (formData: FormData): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.post('/accomplishments', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-  // Get all accomplishments (filtered for employee/manager)
-  getAccomplishments: async (filters = {}) => {
+  // ✅ FIXED: جلب جميع الإنجازات مع filters
+  getAccomplishments: async (filters: AccomplishmentFilters = {}): Promise<ApiResponse<Accomplishment[]>> => {
     try {
       const response = await api.get('/accomplishments', { params: filters });
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-  // Get single accomplishment
-  getAccomplishment: async (id: string) => {
+  // ✅ FIXED: جلب إنجاز محدد
+  getAccomplishment: async (id: string): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.get(`/accomplishments/${id}`);
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-  // Add comment to accomplishment (manager only)
-  addComment: async (id: string, text: string, versionIndex) => {
+  // ✅ FIXED: إضافة تعليق
+  addComment: async (id: string, text: string, versionIndex?: number): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.post(`/accomplishments/${id}/comments`, { text, versionIndex });
-      return response.data;
+      return validateResponse(response.data);
     } catch (error) {
-      throw error.response?.data || { message: 'Server error' };
+      throw handleApiError(error);
     }
   },
 
-    // Employee reply to manager comment
-replyToComment: async (id: string, commentId: string, text: string) => {
-  try {
-    const response = await api.post(`/accomplishments/${id}/comments/${commentId}/reply`, { text });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { message: 'Server error' };
-  }
-},
-  // Mark accomplishment as reviewed (manager only)
-reviewAccomplishment: async (id: string, status: string) => {
-  try {
-    const response = await api.put(`/accomplishments/${id}/review`, { status });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || { message: 'Server error' };
-  }
-},
-
-
-  // Export accomplishments to Excel (manager only)
-  exportAccomplishments: async (filters = {}) => {
-    const res = await api.get("/accomplishments/export", {
-      params: filters,
-      responseType: "blob",
-    });
-    return res; // لو بدك الهيدر كمان (للتأكد)، أو res.data فقط كـ Blob
+  // ✅ FIXED: الرد على تعليق
+  replyToComment: async (id: string, commentId: string, text: string): Promise<ApiResponse<Accomplishment>> => {
+    try {
+      const response = await api.post(`/accomplishments/${id}/comments/${commentId}/reply`, { text });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
 
-  modifyAccomplishment: async (id: string, formData: FormData) => {
-  try {
-    const response = await api.put(`/accomplishments/${id}/modify`, formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-    return response.data;
-  } catch (error: any) {
-    throw error.response?.data || { message: "Server error" };
-  }
-},
-
-startAccomplishment: async (id: string, formData: FormData) => {
-  const response = await api.put(`/accomplishments/${id}/start`, formData, {
-    headers: {
-      "Content-Type": "multipart/form-data"
+  // ✅ FIXED: مراجعة الإنجاز
+  reviewAccomplishment: async (id: string, status: string): Promise<ApiResponse<Accomplishment>> => {
+    try {
+      const response = await api.put(`/accomplishments/${id}/review`, { status });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
     }
-  });
-  return response.data;
-},
+  },
 
+  // ✅ FIXED: تصدير الإنجازات
+  exportAccomplishments: async (filters: AccomplishmentFilters = {}): Promise<any> => {
+    try {
+      const response = await api.get("/accomplishments/export", {
+        params: filters,
+        responseType: "blob",
+      });
+      return response;
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
+  // ✅ FIXED: تعديل الإنجاز
+  modifyAccomplishment: async (id: string, formData: FormData): Promise<ApiResponse<Accomplishment>> => {
+    try {
+      const response = await api.put(`/accomplishments/${id}/modify`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
+
+  // ✅ FIXED: بدء الإنجاز
+  startAccomplishment: async (id: string, formData: FormData): Promise<ApiResponse<Accomplishment>> => {
+    try {
+      const response = await api.put(`/accomplishments/${id}/start`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 };
 
-// Task Titles API calls
+// ✅ FIXED: Task Titles API calls مع معالجة أخطاء محسنة
 export const taskTitlesAPI = {
-  // جلب جميع العناوين (يستخدمه الموظف والمدير)
-  getAll: async () => {
+  // ✅ FIXED: جلب جميع العناوين
+  getAll: async (): Promise<TaskTitle[]> => {
     try {
-      const res = await api.get('/task-titles');
-      return res.data.data;
-    } catch (error: any) {
-      throw error.response?.data || { message: 'Server error' };
+      const response = await api.get('/task-titles');
+      const data = validateResponse(response.data) as ApiResponse<TaskTitle[]>;
+      return data.data;
+    } catch (error) {
+      throw handleApiError(error);
     }
   },
-  // إضافة عنوان جديد (للمدير فقط)
-  add: async (name: string) => {
+
+  // ✅ FIXED: إضافة عنوان جديد
+  add: async (name: string): Promise<TaskTitle> => {
     try {
-      const res = await api.post('/task-titles', { name });
-      return res.data.data;
-    } catch (error: any) {
-      throw error.response?.data || { message: 'Server error' };
+      const response = await api.post('/task-titles', { name });
+      const data = validateResponse(response.data) as ApiResponse<TaskTitle>;
+      return data.data;
+    } catch (error) {
+      throw handleApiError(error);
     }
   },
-  // تعديل عنوان
-  edit: async (id: string, name: string) => {
+
+  // ✅ FIXED: تعديل عنوان
+  edit: async (id: string, name: string): Promise<TaskTitle> => {
     try {
-      const res = await api.put(`/task-titles/${id}`, { name });
-      return res.data.data;
-    } catch (error: any) {
-      throw error.response?.data || { message: 'Server error' };
+      const response = await api.put(`/task-titles/${id}`, { name });
+      const data = validateResponse(response.data) as ApiResponse<TaskTitle>;
+      return data.data;
+    } catch (error) {
+      throw handleApiError(error);
     }
   },
-  // حذف عنوان
-  remove: async (id: string) => {
+
+  // ✅ FIXED: حذف عنوان
+  remove: async (id: string): Promise<boolean> => {
     try {
       await api.delete(`/task-titles/${id}`);
       return true;
-    } catch (error: any) {
-      throw error.response?.data || { message: 'Server error' };
+    } catch (error) {
+      throw handleApiError(error);
     }
   }
 };
 
+// ✅ FIXED: Comparisons API مع types محددة
 export const comparisonsAPI = {
-  create: (payload: {
+  create: async (payload: {
     name?: string;
     employeeIds: string[];
     notes?: string;
     range?: "all"|"week"|"month"|"year"|"custom";
     startDate?: string;
     endDate?: string;
-  }) => api.post('/comparisons', payload).then(r => r.data),
+  }): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.post('/comparisons', payload);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
-  list: () => api.get('/comparisons').then(r => r.data),
+  list: async (): Promise<ApiResponse<any[]>> => {
+    try {
+      const response = await api.get('/comparisons');
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
-  get: (id: string) => api.get(`/comparisons/${id}`).then(r => r.data),
+  get: async (id: string): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.get(`/comparisons/${id}`);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
-  update: (id: string, payload: Partial<{
-    name: string; notes: string; range: string; startDate: string; endDate: string; employeeIds: string[];
-  }>) => api.put(`/comparisons/${id}`, payload).then(r => r.data),
+  update: async (id: string, payload: Partial<{
+    name: string; 
+    notes: string; 
+    range: string; 
+    startDate: string; 
+    endDate: string; 
+    employeeIds: string[];
+  }>): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.put(`/comparisons/${id}`, payload);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 
-  remove: (id: string) => api.delete(`/comparisons/${id}`).then(r => r.data),
+  remove: async (id: string): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.delete(`/comparisons/${id}`);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
+  },
 };
 
-// Notifications API calls
+// ✅ FIXED: Notifications API مع pagination محسنة
 export const notificationsAPI = {
-  // page يبدأ من 1
-  get: async (page = 1, limit = 20) => {
-    const res = await api.get("/notifications", { params: { page, limit } });
-    // شكل الاستجابة من السيرفر: { success, data, totalCount, totalPages, currentPage }
-    return res.data;
+  get: async (page = 1, limit = 20): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.get("/notifications", { params: { page, limit } });
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
-  markAllRead: async () => {
-    const res = await api.post("/notifications/mark-all-read");
-    return res.data;
+
+  markAllRead: async (): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.post("/notifications/mark-all-read");
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
-  markRead: async (id: string) => {
-    const res = await api.put(`/notifications/${id}/read`);
-    return res.data;
+
+  markRead: async (id: string): Promise<ApiResponse<any>> => {
+    try {
+      const response = await api.put(`/notifications/${id}/read`);
+      return validateResponse(response.data);
+    } catch (error) {
+      throw handleApiError(error);
+    }
   },
 };
 

@@ -11,12 +11,15 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         get() {
           const rawValue = this.getDataValue("data");
+          // ✅ تحسين معالجة JSON مع try-catch أفضل
           try {
-            return typeof rawValue === "string"
-              ? JSON.parse(rawValue)
-              : rawValue;
-          } catch {
-            return null;
+            if (typeof rawValue === "string") {
+              return JSON.parse(rawValue);
+            }
+            return rawValue || {}; // ✅ إرجاع كائن فارغ بدلاً من null
+          } catch (error) {
+            console.error("Error parsing notification data:", error);
+            return {}; // ✅ إرجاع كائن فارغ في حالة الخطأ
           }
         },
       },
@@ -25,6 +28,24 @@ module.exports = (sequelize, DataTypes) => {
     {
       tableName: "notifications",
       timestamps: true,
+      // ✅ إضافة فهارس لتحسين الأداء
+      indexes: [
+        {
+          fields: ["user"],
+        },
+        {
+          fields: ["isRead"],
+        },
+        {
+          fields: ["type"],
+        },
+        {
+          fields: ["createdAt"],
+        },
+        {
+          fields: ["user", "isRead"], // فهرس مركب لاستعلامات الإشعارات غير المقروءة
+        },
+      ],
     }
   );
 };

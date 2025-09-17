@@ -43,12 +43,14 @@ module.exports = (sequelize, DataTypes, asArray) => {
         allowNull: false,
         defaultValue: "pending",
       },
+      // ✅ تحسين اسم الحقل ليكون camelCase
       lastContentModifiedAt: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
       },
       taskTitle: { type: DataTypes.INTEGER, allowNull: false },
 
+      // ✅ تحسين اسم الحقل ليكون camelCase
       previousVersions: {
         type: DataTypes.JSON,
         allowNull: false,
@@ -69,6 +71,21 @@ module.exports = (sequelize, DataTypes, asArray) => {
     {
       tableName: "accomplishments",
       timestamps: true,
+      // ✅ إضافة فهارس لتحسين الأداء
+      indexes: [
+        {
+          fields: ["employee"],
+        },
+        {
+          fields: ["status"],
+        },
+        {
+          fields: ["taskTitle"],
+        },
+        {
+          fields: ["createdAt"],
+        },
+      ],
     }
   );
 };

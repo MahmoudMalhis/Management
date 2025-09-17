@@ -1,20 +1,25 @@
 const { Accomplishment, Notification, User } = require("../../models");
+// ✅ استيراد خدمة Socket المحسّنة
+const socketService = require("../../services/socketService");
 
+// ✅ دالة موحدة لإنشاء ID
 const generateId = () =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-let io;
-try {
-  io = require("../../server").io;
-} catch {}
 
-module.exports = async function addComment(req, res) {
+module.exports = async function addComment(req, res, next) {
+  // ✅ إضافة next
   try {
     const { text, versionIndex } = req.body;
     const accomplishment = await Accomplishment.findByPk(req.params.id);
-    if (!accomplishment)
-      return res.status(404).json({ message: "Accomplishment not found" });
 
-    // احسب versionIndex بشكل صحيح لجميع النسخ
+    if (!accomplishment) {
+      return res.status(404).json({
+        success: false, // ✅ إضافة success للتوحيد
+        message: "Accomplishment not found",
+      });
+    }
+
+    // ✅ حساب versionIndex بشكل صحيح لجميع النسخ
     const currentVersionIndex = Array.isArray(accomplishment.previousVersions)
       ? accomplishment.previousVersions.length
       : 0;
@@ -39,39 +44,45 @@ module.exports = async function addComment(req, res) {
     accomplishment.comments = comments;
     await accomplishment.save();
 
+    // ✅ معالجة الإشعارات بطريقة محسّنة
     if (req.user.role === "manager") {
+      // إشعار للموظف
       await Notification.create({
         user: accomplishment.employee,
         type: "comment",
         message: "تم إضافة تعليق جديد على مهمتك",
         data: { accomplishmentId: accomplishment._id, commentText: text },
       });
-      if (io) {
-        io.to(String(accomplishment.employee)).emit("notification", {
-          type: "comment",
-          message: "تم إضافة تعليق جديد على مهمتك",
-          data: { accomplishmentId: accomplishment._id, commentText: text },
-        });
-      }
+
+      // ✅ إرسال إشعار Socket
+      socketService.notifyUser(accomplishment.employee, {
+        type: "comment",
+        message: "تم إضافة تعليق جديد على مهمتك",
+        data: { accomplishmentId: accomplishment._id, commentText: text },
+      });
     } else {
+      // إشعارات للمدراء
       const managers = await User.findAll({ where: { role: "manager" } });
-      for (const m of managers) {
-        await Notification.create({
-          user: m._id,
-          type: "comment",
-          message: `قام الموظف ${req.user.name} بإضافة تعليق على المهمة "${accomplishment.originalDescription}"`,
-          data: { accomplishmentId: accomplishment._id, commentText: text },
-        });
-        if (io) {
-          io.to(String(m._id)).emit("notification", {
-            type: "comment",
-            message: `قام الموظف ${req.user.name} بإضافة تعليق على المهمة "${accomplishment.originalDescription}"`,
-            data: { accomplishmentId: accomplishment._id, commentText: text },
-          });
-        }
-      }
+
+      // ✅ استخدام bulkCreate لتحسين الأداء
+      const managerNotifications = managers.map((manager) => ({
+        user: manager._id,
+        type: "comment",
+        message: `قام الموظف ${req.user.name} بإضافة تعليق على المهمة "${accomplishment.originalDescription}"`,
+        data: { accomplishmentId: accomplishment._id, commentText: text },
+      }));
+
+      await Notification.bulkCreate(managerNotifications);
+
+      // ✅ إرسال إشعار Socket للمدراء
+      socketService.notifyManagers({
+        type: "comment",
+        message: `قام الموظف ${req.user.name} بإضافة تعليق على المهمة "${accomplishment.originalDescription}"`,
+        data: { accomplishmentId: accomplishment._id, commentText: text },
+      });
     }
 
+    // ✅ إرجاع البيانات المحدّثة مع العلاقات
     const updated = await Accomplishment.findByPk(req.params.id, {
       include: [
         {
@@ -84,7 +95,7 @@ module.exports = async function addComment(req, res) {
 
     res.json({ success: true, data: updated });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

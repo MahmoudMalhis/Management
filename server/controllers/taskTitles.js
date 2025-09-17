@@ -1,62 +1,138 @@
 const { TaskTitle } = require("../models");
 
-exports.getTaskTitles = async (req, res) => {
+exports.getTaskTitles = async (req, res, next) => {
+  // ✅ إضافة next
   try {
-    const titles = await TaskTitle.findAll({ order: [["createdAt", "DESC"]] });
-    res.json({ success: true, data: titles });
+    const titles = await TaskTitle.findAll({
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({
+      success: true,
+      count: titles.length, // ✅ إضافة عدد العناصر للثبات
+      data: titles,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.addTaskTitle = async (req, res) => {
+exports.addTaskTitle = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { name } = req.body;
-    if (!name) {
-      return res.status(400).json({ success: false, message: "العنوان مطلوب" });
+
+    // ✅ تحسين التحقق من البيانات
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "العنوان مطلوب",
+      });
     }
-    const exists = await TaskTitle.findOne({ where: { name } });
-    if (exists) {
-      return res
-        .status(409)
-        .json({ success: false, message: "العنوان موجود مسبقاً" });
+
+    const trimmedName = name.trim(); // ✅ تنظيف النص
+
+    // ✅ التحقق من وجود العنوان مسبقاً
+    const existingTitle = await TaskTitle.findOne({
+      where: { name: trimmedName },
+    });
+
+    if (existingTitle) {
+      return res.status(409).json({
+        success: false,
+        message: "العنوان موجود مسبقاً",
+      });
     }
-    const title = await TaskTitle.create({ name });
-    res.status(201).json({ success: true, data: title });
+
+    const title = await TaskTitle.create({ name: trimmedName });
+
+    res.status(201).json({
+      success: true,
+      data: title,
+      message: "تم إضافة العنوان بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.editTaskTitle = async (req, res) => {
+exports.editTaskTitle = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { id } = req.params;
     const { name } = req.body;
+
+    // ✅ تحسين التحقق من البيانات
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "العنوان مطلوب",
+      });
+    }
+
     const title = await TaskTitle.findByPk(id);
     if (!title) {
-      return res
-        .status(404)
-        .json({ success: false, message: "العنوان غير موجود" });
+      return res.status(404).json({
+        success: false,
+        message: "العنوان غير موجود",
+      });
     }
-    title.name = name;
+
+    const trimmedName = name.trim(); // ✅ تنظيف النص
+
+    // ✅ التحقق من عدم وجود عنوان آخر بنفس الاسم
+    const existingTitle = await TaskTitle.findOne({
+      where: {
+        name: trimmedName,
+        _id: { [require("../models").Op.ne]: id }, // ✅ استثناء العنوان الحالي
+      },
+    });
+
+    if (existingTitle) {
+      return res.status(409).json({
+        success: false,
+        message: "العنوان موجود مسبقاً",
+      });
+    }
+
+    title.name = trimmedName;
     await title.save();
-    res.json({ success: true, data: title });
+
+    res.json({
+      success: true,
+      data: title,
+      message: "تم تحديث العنوان بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.deleteTaskTitle = async (req, res) => {
+exports.deleteTaskTitle = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { id } = req.params;
-    const deletedCount = await TaskTitle.destroy({ where: { _id: id } });
+
+    const deletedCount = await TaskTitle.destroy({
+      where: { _id: id },
+    });
+
     if (!deletedCount) {
-      return res
-        .status(404)
-        .json({ success: false, message: "العنوان غير موجود" });
+      return res.status(404).json({
+        success: false,
+        message: "العنوان غير موجود",
+      });
     }
-    res.json({ success: true });
+
+    res.json({
+      success: true,
+      message: "تم حذف العنوان بنجاح", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

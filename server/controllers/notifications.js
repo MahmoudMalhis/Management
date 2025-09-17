@@ -1,10 +1,16 @@
 const { Notification } = require("../models");
 
-exports.getNotifications = async (req, res) => {
+exports.getNotifications = async (req, res, next) => {
+  // ✅ إضافة next
   try {
+    // ✅ تحسين معالجة معاملات الصفحة والحد الأقصى
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const limit = Math.max(parseInt(req.query.limit || "20", 10), 1);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || "20", 10), 1),
+      100
+    ); // ✅ حد أقصى 100
     const offset = (page - 1) * limit;
+
     const result = await Notification.findAndCountAll({
       where: { user: req.user.id },
       order: [["createdAt", "DESC"]],
@@ -17,48 +23,69 @@ exports.getNotifications = async (req, res) => {
     return res.json({
       success: true,
       data: result.rows,
-      totalCount: result.count,
-      totalPages,
-      currentPage: page,
+      pagination: {
+        // ✅ تجميع معلومات الصفحة في كائن منفصل
+        totalCount: result.count,
+        totalPages,
+        currentPage: page,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (err) {
-    console.error("getNotifications error:", err);
-    return res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.markAllRead = async (req, res) => {
+exports.markAllRead = async (req, res, next) => {
+  // ✅ إضافة next
   try {
-    await Notification.update(
+    const [updatedCount] = await Notification.update(
       { isRead: true },
       {
         where: { user: req.user.id, isRead: false },
       }
     );
-    return res.json({ success: true });
+
+    return res.json({
+      success: true,
+      message: `تم تحديد ${updatedCount} إشعارات كمقروءة`, // ✅ رسالة أكثر وضوحاً
+    });
   } catch (err) {
-    console.error("markAllRead error:", err);
-    return res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.markNotificationRead = async (req, res) => {
+exports.markNotificationRead = async (req, res, next) => {
+  // ✅ إضافة next
   try {
-    const notif = await Notification.findOne({
+    const notification = await Notification.findOne({
       where: { _id: req.params.id, user: req.user.id },
     });
-    if (!notif) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Notification not found" });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: "Notification not found",
+      });
     }
-    if (!notif.isRead) {
-      notif.isRead = true;
-      await notif.save();
+
+    // ✅ تحديث الإشعار فقط إذا لم يكن مقروءاً من قبل
+    if (!notification.isRead) {
+      notification.isRead = true;
+      await notification.save();
     }
-    return res.json({ success: true, data: notif });
+
+    return res.json({
+      success: true,
+      data: notification,
+      message: "تم تحديد الإشعار كمقروء", // ✅ رسالة تأكيد
+    });
   } catch (err) {
-    console.error("markNotificationRead error:", err);
-    return res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ استخدام معالج الأخطاء الموحد
+    next(err);
   }
 };

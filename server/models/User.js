@@ -23,21 +23,43 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
+  // ✅ تحسين hook الـ beforeCreate مع معالجة أفضل للأخطاء
   User.beforeCreate(async (user) => {
     if (user.password) {
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(user.password, salt);
-    }
-  });
-  User.beforeUpdate(async (user) => {
-    if (user.changed("password")) {
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(user.password, salt);
+      try {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      } catch (error) {
+        console.error("Error hashing password on create:", error);
+        throw new Error("فشل في تشفير كلمة المرور"); // ✅ رسالة خطأ واضحة
+      }
     }
   });
 
-  User.prototype.matchPassword = async function (entered) {
-    return bcrypt.compare(entered, this.password);
+  // ✅ تحسين hook الـ beforeUpdate مع معالجة أفضل للأخطاء
+  User.beforeUpdate(async (user) => {
+    if (user.changed("password")) {
+      try {
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(user.password, salt);
+      } catch (error) {
+        console.error("Error hashing password on update:", error);
+        throw new Error("فشل في تشفير كلمة المرور"); // ✅ رسالة خطأ واضحة
+      }
+    }
+  });
+
+  // ✅ تحسين دالة مقارنة كلمة المرور مع معالجة أفضل للأخطاء
+  User.prototype.matchPassword = async function (enteredPassword) {
+    try {
+      if (!enteredPassword || !this.password) {
+        return false;
+      }
+      return await bcrypt.compare(enteredPassword, this.password);
+    } catch (error) {
+      console.error("Error comparing passwords:", error);
+      return false; // ✅ إرجاع false في حالة الخطأ بدلاً من throw
+    }
   };
 
   return User;

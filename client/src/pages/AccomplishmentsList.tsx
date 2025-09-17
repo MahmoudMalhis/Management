@@ -1,14 +1,22 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from "react";
+// ✅ FIXED: تحديث AccomplishmentsList مع جميع التحسينات المطلوبة
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import api, { authAPI, accomplishmentsAPI } from "@/api/api";
+import { toast } from "sonner";
+
+// ✅ FIXED: استيراد Types والثوابت
+import { Accomplishment, Employee, AccomplishmentFilters } from "@/types";
+import { ROUTES } from "@/constants";
+import { authAPI, accomplishmentsAPI } from "@/api/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { showErrorToast } from "@/utils/errorHandler";
+import { useAsyncState } from "@/hooks/useAsyncState";
+
+// ✅ FIXED: استيراد مكونات UI
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -25,23 +33,15 @@ import {
 import {
   LucidePlus,
   LucideLoader,
-  LucideFileCheck,
-  LucideFileClock,
   LucideFileText,
   LucideFilter,
   LucideX,
   LucideDownload,
+  LucideAlertCircle,
 } from "lucide-react";
-import { toast } from "sonner";
 
-interface Accomplishment {
-  _id: string;
-  description: string;
-  status: "pending" | "reviewed" | "needs_modification";
-  isReviewed: boolean;
-  createdAt: string;
-  files: Array<{ _id: string; fileName: string; filePath: string }>;
-  comments: Array<{ _id: string; text: string; createdAt: string }>;
+// ✅ FIXED: تحسين الـ interface للبيانات المحلية
+interface AccomplishmentDisplayData extends Accomplishment {
   employeeInfo: {
     _id: string;
     name: string;
@@ -52,157 +52,410 @@ interface Accomplishment {
   };
 }
 
-interface Employee {
-  _id: string;
-  name: string;
-}
+// ✅ FIXED: مكون منفصل لبطاقة الإنجاز
+const AccomplishmentCard: React.FC<{
+  accomplishment: AccomplishmentDisplayData;
+  isManager: boolean;
+  t: any;
+}> = ({ accomplishment, isManager, t }) => {
+  const formattedDate = useMemo(() => {
+    return new Date(accomplishment.createdAt).toLocaleDateString("ar-SA", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }, [accomplishment.createdAt]);
+  // ✅ FIXED: تحسين عرض الحالة مع الألوان
+  const getStatusStyles = (status: string) => {
+    const styles = {
+      reviewed:
+        "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+      needs_modification:
+        "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+      pending:
+        "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+      assigned: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+    };
+    return styles[status] || styles.pending;
+  };
 
-const AccomplishmentsList = () => {
+  // ✅ FIXED: تحسين عرض النص
+  const getStatusText = (status: string) => {
+    const statusMap = {
+      reviewed: t("accomplishments.reviewed"),
+      needs_modification: t("accomplishments.needsModification"),
+      pending: t("accomplishments.notReviewed"),
+      assigned: t("accomplishments.assigned") || "مُكلف",
+    };
+    return statusMap[status] || statusMap.pending;
+  };
+
+  return (
+    <Card className="glass-card glass-card-hover border-none md:w-[32%] w-full">
+      <CardHeader className="p-3 pb-2">
+        <CardTitle className="text-lg glassy-text flex justify-between items-start">
+          <span className="text-muted-foreground text-sm">{formattedDate}</span>
+          <span className="capitalize font-bold text-center flex-1">
+            {accomplishment.taskTitleInfo?.name || "غير محدد"}
+          </span>
+          {isManager && (
+            <span className="capitalize font-bold text-right">
+              {accomplishment.employeeInfo?.name}
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+
+      <Link to={`${ROUTES.ACCOMPLISHMENTS}/${accomplishment._id}`}>
+        <CardDescription className="p-3 border-y border-[#aac8f0] h-20 bg-[#d5e2f9] overflow-hidden">
+          {accomplishment.description.length > 100
+            ? `${accomplishment.description.substring(0, 100)}...`
+            : accomplishment.description}
+        </CardDescription>
+
+        <div
+          className={`font-[calibri] font-bold px-2 py-1 self-start rounded-b-xl mx-auto ${getStatusStyles(
+            accomplishment.status
+          )}`}
+        >
+          <CardContent className="p-1">
+            <div className="flex justify-between md:flex-row flex-col items-center gap-2">
+              <div className="flex items-center text-sm text-muted-foreground">
+                <LucideFileText className="h-3 w-3 mr-1" />
+                {accomplishment.files?.length || 0}{" "}
+                {t("accomplishments.files").toLowerCase()}
+              </div>
+
+              <div className="flex items-center text-sm text-muted-foreground">
+                {accomplishment.comments?.length || 0}{" "}
+                {t("accomplishments.comments").toLowerCase()}
+              </div>
+
+              <div className="px-2 py-1 rounded-xl bg-white/50">
+                {getStatusText(accomplishment.status)}
+              </div>
+            </div>
+          </CardContent>
+        </div>
+      </Link>
+    </Card>
+  );
+};
+
+// ✅ FIXED: مكون منفصل لفلاتر البحث
+const FiltersCard: React.FC<{
+  showFilters: boolean;
+  onClose: () => void;
+  filters: AccomplishmentFilters;
+  onFiltersChange: (filters: AccomplishmentFilters) => void;
+  employees: Employee[];
+  isManager: boolean;
+  t: any;
+}> = ({
+  showFilters,
+  onClose,
+  filters,
+  onFiltersChange,
+  employees,
+  isManager,
+  t,
+}) => {
+  if (!showFilters) return null;
+
+  const handleEmployeeChange = (employeeId: string) => {
+    onFiltersChange({
+      ...filters,
+      employee: employeeId === "all" ? undefined : employeeId,
+    });
+  };
+
+  const handleDateChange = (field: "startDate" | "endDate", value: string) => {
+    onFiltersChange({
+      ...filters,
+      [field]: value || undefined,
+    });
+  };
+
+  const clearFilters = () => {
+    onFiltersChange({});
+  };
+
+  return (
+    <Card className="glass-card glass-card-hover border-none mb-4">
+      <CardHeader className="pb-3">
+        <div className="flex justify-between items-center">
+          <CardTitle className="text-base glassy-text">
+            {t("accomplishments.filter")}
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="glass-btn h-8 w-8 p-0"
+            onClick={onClose}
+          >
+            <LucideX className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {isManager && (
+            <div className="space-y-1">
+              <Label htmlFor="employee">
+                {t("accomplishments.filterByEmployee")}
+              </Label>
+              <Select
+                value={filters.employee || "all"}
+                onValueChange={handleEmployeeChange}
+              >
+                <SelectTrigger className="glass-input">
+                  <SelectValue placeholder={t("employees.select")} />
+                </SelectTrigger>
+                <SelectContent className="glass-dropdown">
+                  <SelectItem value="all">جميع الموظفين</SelectItem>
+                  {employees.map((employee) => (
+                    <SelectItem
+                      key={employee._id}
+                      value={employee._id}
+                      className="capitalize"
+                    >
+                      {employee.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label htmlFor="startDate">{t("accomplishments.startDate")}</Label>
+            <Input
+              id="startDate"
+              type="date"
+              className="glass-input"
+              value={filters.startDate || ""}
+              onChange={(e) => handleDateChange("startDate", e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="endDate">{t("accomplishments.endDate")}</Label>
+            <Input
+              id="endDate"
+              type="date"
+              className="glass-input"
+              value={filters.endDate || ""}
+              onChange={(e) => handleDateChange("endDate", e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-between mt-4">
+          <Button variant="ghost" className="glass-btn" onClick={clearFilters}>
+            {t("accomplishments.clearFilter")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ FIXED: المكون الرئيسي مع جميع التحسينات
+const AccomplishmentsList: React.FC = () => {
   const { t } = useTranslation();
   const { isManager } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [accomplishments, setAccomplishments] = useState<Accomplishment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  // ✅ FIXED: استخدام custom hook للحالة
+  const {
+    data: accomplishments,
+    loading,
+    error,
+    execute: fetchAccomplishments,
+    setError,
+  } = useAsyncState<AccomplishmentDisplayData[]>();
+
+  const { data: employees, execute: fetchEmployees } =
+    useAsyncState<Employee[]>();
+
+  // ✅ FIXED: حالات محلية منظمة
   const [showFilters, setShowFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [filters, setFilters] = useState<AccomplishmentFilters>({});
 
-  // Filter states
-  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
-
-  // Fetch employees for manager filter
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      if (!isManager) return;
-
-      try {
-        const response = await authAPI.getEmployees({ status: "active" });
-        setEmployees(response.data || []);
-      } catch (err) {
-        console.error("Error fetching employees:", err);
-      }
-    };
-
+  // ✅ FIXED: استخراج معاملات URL
+  const urlParams = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    const employeeId = params.get("employee") || "";
+    return {
+      employeeId: params.get("employee") || "",
+      status: params.get("status") || "",
+    };
+  }, [location.search]);
 
-    if (employeeId && selectedEmployee !== employeeId) {
-      setSelectedEmployee(employeeId);
-    } else if (!employeeId && selectedEmployee) {
-      setSelectedEmployee("");
+  // ✅ FIXED: تحديث الفلاتر من URL
+  useEffect(() => {
+    const newFilters: AccomplishmentFilters = {};
+
+    if (urlParams.employeeId && urlParams.employeeId !== "all") {
+      newFilters.employee = urlParams.employeeId;
     }
 
-    fetchEmployees();
-  }, [isManager, location.search, selectedEmployee]);
+    if (urlParams.status) {
+      newFilters.status = urlParams.status;
+    }
 
-  // Fetch accomplishments with filters
+    setFilters(newFilters);
+  }, [urlParams]);
+
+  // ✅ FIXED: جلب الموظفين للمدير
   useEffect(() => {
-    const fetchAccomplishments = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    if (isManager) {
+      fetchEmployees(async () => {
+        const response = await authAPI.getEmployees({ status: "active" });
+        return response.data || [];
+      });
+    }
+  }, [isManager, fetchEmployees]);
 
-        const filters: Record<string, string> = {};
-        if (selectedEmployee && selectedEmployee !== "all")
-          filters.employee = selectedEmployee;
-        if (startDate) filters.startDate = startDate;
-        if (endDate) filters.endDate = endDate;
+  // ✅ FIXED: جلب الإنجازات مع الفلاتر
+  useEffect(() => {
+    fetchAccomplishments(async () => {
+      const response = await accomplishmentsAPI.getAccomplishments(filters);
+      // Ensure each item has employeeInfo and taskTitleInfo
+      return (response.data || []).map((acc: Accomplishment) => ({
+        ...acc,
+        employeeInfo: acc.employeeInfo ?? { _id: "", name: "" },
+        taskTitleInfo: acc.taskTitleInfo ?? { _id: "", name: "" },
+      }));
+    });
+  }, [filters, fetchAccomplishments]);
 
-        const response = await accomplishmentsAPI.getAccomplishments(filters);
-        setAccomplishments(response.data || []);
-      } catch (err) {
-        console.error("Error fetching accomplishments:", err);
-        setError(err.message || t("accomplishments.loadFailed"));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAccomplishments();
-  }, [selectedEmployee, startDate, endDate, t]);
-
-  const handleExport = async () => {
+  // ✅ FIXED: تحسين دالة التصدير
+  const handleExport = useCallback(async () => {
     try {
       setExporting(true);
 
-      const params: Record<string, string> = {};
-      if (selectedEmployee && selectedEmployee !== "all")
-        params.employee = selectedEmployee;
-      if (startDate) params.startDate = startDate;
-      if (endDate) params.endDate = endDate;
+      const response = await accomplishmentsAPI.exportAccomplishments(filters);
 
-      // مهم: استجابة blob وإلّا رح يحاول يقرأ JSON
-      const res = await api.get("/accomplishments/export", {
-        params,
-        responseType: "blob",
-      });
-
-      // لو صار خطأ وراجعت JSON بدل ملف Excel
-      const contentType = res.headers["content-type"];
+      // التحقق من نوع المحتوى
+      const contentType = response.headers["content-type"];
       if (contentType && contentType.includes("application/json")) {
-        // نحاول نقرأ رسالة الخطأ
-        const text = (await res.data.text?.()) ?? "";
-        try {
-          const err = JSON.parse(text);
-          throw new Error(err.message || "فشل التصدير");
-        } catch {
-          throw new Error("فشل التصدير");
-        }
+        throw new Error("فشل في تصدير البيانات");
       }
 
-      const blob = new Blob([res.data], {
+      // إنشاء رابط التحميل
+      const blob = new Blob([response.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
+
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `accomplishments_export_${Date.now()}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `accomplishments_export_${Date.now()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-      console.error("Export failed:", error);
-      toast.error(error?.message || "فشل في تصدير البيانات");
+
+      toast.success("تم تصدير البيانات بنجاح");
+    } catch (error) {
+      showErrorToast(error, "فشل في تصدير البيانات");
     } finally {
       setExporting(false);
     }
-  };
+  }, [filters]);
 
-  const clearFilters = () => {
-    setSelectedEmployee("");
-    setStartDate("");
-    setEndDate("");
-  };
+  // ✅ FIXED: تحديث URL عند تغيير الفلاتر
+  const updateUrlWithFilters = useCallback(
+    (newFilters: AccomplishmentFilters) => {
+      const searchParams = new URLSearchParams();
 
-  const handleEmployeeChange = (value: string) => {
-    setSelectedEmployee(value);
-    if (value && value !== "all") {
-      navigate(`/accomplishments?employee=${value}`);
-    } else {
-      navigate(`/accomplishments`);
+      if (newFilters.employee) {
+        searchParams.set("employee", newFilters.employee);
+      }
+
+      if (newFilters.status) {
+        searchParams.set("status", newFilters.status);
+      }
+
+      const newUrl = searchParams.toString()
+        ? `${ROUTES.ACCOMPLISHMENTS}?${searchParams.toString()}`
+        : ROUTES.ACCOMPLISHMENTS;
+
+      navigate(newUrl, { replace: true });
+    },
+    [navigate]
+  );
+
+  // ✅ FIXED: معالج تغيير الفلاتر
+  const handleFiltersChange = useCallback(
+    (newFilters: AccomplishmentFilters) => {
+      setFilters(newFilters);
+      updateUrlWithFilters(newFilters);
+    },
+    [updateUrlWithFilters]
+  );
+
+  // ✅ FIXED: فلترة الإنجازات حسب الحالة من URL
+  const filteredAccomplishments = useMemo(() => {
+    if (!accomplishments) return [];
+
+    if (urlParams.status === "notReviewed") {
+      return accomplishments.filter((acc) => acc.status !== "reviewed");
     }
-  };
 
-  const params = new URLSearchParams(location.search);
-  const statusParam = params.get("status");
-  let accomplishmentsToDisplay = accomplishments;
-  if (statusParam === "notReviewed") {
-    accomplishmentsToDisplay = accomplishments.filter(
-      (acc) => acc.status !== "reviewed"
+    return accomplishments;
+  }, [accomplishments, urlParams.status]);
+
+  // ✅ FIXED: عرض حالة التحميل
+  if (loading && !accomplishments) {
+    return (
+      <div className="flex justify-center items-center min-h-[50vh]">
+        <div className="text-center">
+          <LucideLoader className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">{t("common.loading")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ FIXED: عرض حالة الخطأ
+  if (error) {
+    return (
+      <div className="flex justify-center items-center min-h-[50vh]">
+        <Card className="glass-card border-red-200">
+          <CardContent className="p-6 text-center">
+            <LucideAlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button
+              onClick={() => {
+                setError(null);
+                fetchAccomplishments(async () => {
+                  const response = await accomplishmentsAPI.getAccomplishments(
+                    filters
+                  );
+                  return response.data || [];
+                });
+              }}
+              className="glass-btn"
+            >
+              المحاولة مرة أخرى
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6 min-h-screen p-6 bg-gradient-to-br from-[#d1e9ff] via-[#f2f8fc] to-[#b6d2f8]">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <h1 className="text-3xl font-bold tracking-tight glassy-text">
           {t("accomplishments.title")}
         </h1>
+
         <div className="flex gap-2">
           {isManager && (
             <Button
@@ -213,7 +466,7 @@ const AccomplishmentsList = () => {
               {exporting ? (
                 <>
                   <LucideLoader className="h-4 w-4 animate-spin" />
-                  {t("accomplishments.exporting")}{" "}
+                  {t("accomplishments.exporting")}
                 </>
               ) : (
                 <>
@@ -223,6 +476,7 @@ const AccomplishmentsList = () => {
               )}
             </Button>
           )}
+
           <Button
             className="glass-btn flex items-center gap-1"
             onClick={() => setShowFilters(!showFilters)}
@@ -230,8 +484,9 @@ const AccomplishmentsList = () => {
             <LucideFilter className="h-4 w-4" />
             {t("accomplishments.filter")}
           </Button>
+
           {!isManager && (
-            <Link to="/accomplishments/add">
+            <Link to={ROUTES.ACCOMPLISHMENTS_ADD}>
               <Button className="glass-btn flex items-center gap-1">
                 <LucidePlus className="h-4 w-4" />
                 {t("accomplishments.add")}
@@ -242,223 +497,42 @@ const AccomplishmentsList = () => {
       </div>
 
       {/* Filters */}
-      {showFilters && (
-        <Card className="glass-card glass-card-hover border-none">
-          <CardHeader className="pb-3">
-            <div className="flex justify-between items-center">
-              <CardTitle className="text-base glassy-text">
-                {t("accomplishments.filter")}
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="glass-btn h-8 w-8 p-0"
-                onClick={() => setShowFilters(false)}
-              >
-                <LucideX className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {isManager && (
-                <div className="space-y-1">
-                  <Label htmlFor="employee">
-                    {t("accomplishments.filterByEmployee")}
-                  </Label>
-                  <Select
-                    value={selectedEmployee}
-                    onValueChange={handleEmployeeChange}
-                  >
-                    <SelectTrigger className="glass-input">
-                      <SelectValue placeholder={t("employees.select")} />
-                    </SelectTrigger>
-                    <SelectContent className="glass-dropdown">
-                      <SelectItem value="all">
-                        {t("employees.select")}
-                      </SelectItem>
-                      {employees.map((employee) => (
-                        <SelectItem
-                          key={employee._id}
-                          value={employee._id}
-                          className="capitalize"
-                        >
-                          {employee.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label htmlFor="startDate">
-                  {t("accomplishments.startDate")}
-                </Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  className="glass-input"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>{" "}
-              <div className="space-y-1">
-                <Label htmlFor="endDate">{t("accomplishments.endDate")}</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  className="glass-input"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button
-              variant="ghost"
-              className="glass-btn"
-              onClick={clearFilters}
-            >
-              {t("accomplishments.clearFilter")}
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
+      <FiltersCard
+        showFilters={showFilters}
+        onClose={() => setShowFilters(false)}
+        filters={filters}
+        onFiltersChange={handleFiltersChange}
+        employees={employees || []}
+        isManager={isManager}
+        t={t}
+      />
 
-      {/* Loading and error states */}
-      {loading ? (
-        <div className="flex justify-center p-8">
-          <LucideLoader className="h-8 w-8 animate-spin" />
-        </div>
-      ) : error ? (
-        <Card className="glass-card border border-red-200">
-          <CardContent className="flex items-center gap-2 py-6">
-            <span className="text-red-600 dark:text-red-400">{error}</span>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex flex-wrap justify-center gap-3 mx-auto">
-          {accomplishmentsToDisplay.length > 0 ? (
-            accomplishmentsToDisplay.map((accomplishment) => (
-              <Card
-                key={accomplishment._id}
-                className="glass-card glass-card-hover border-none md:w-[32%] w-full"
-              >
-                <CardHeader className="p-3 pb-2">
-                  <CardTitle className="text-lg glassy-text flex justify-between">
-                    <span className="text-muted-foreground text-base">
-                      {new Date(accomplishment.createdAt).toLocaleDateString()}
-                    </span>
-                    <span className="capitalize font-bold">
-                      {accomplishment.taskTitleInfo?.name}
-                    </span>
-                    {isManager && (
-                      <span className="capitalize font-bold">
-                        {accomplishment.employeeInfo?.name}
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <Link to={`/accomplishments/${accomplishment._id}`}>
-                  <CardDescription className="p-3 border-y border-[#aac8f0] h-20 bg-[#d5e2f9] overflow-hidden">
-                    {accomplishment.description.length > 100
-                      ? `${accomplishment.description.substring(0, 100)}...`
-                      : accomplishment.description}
-                  </CardDescription>
-                  <div
-                    className={`font-[calibri] font-bold px-2 py-1 self-start rounded-b-xl mx-auto
-                        ${
-                          accomplishment.status === "reviewed"
-                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                            : accomplishment.status === "needs_modification"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-amber-100 text-amber-800"
-                        }
-                        `}
-                  >
-                    <CardContent className="p-1">
-                      <div className="flex justify-between md:flex-row flex-col items-center">
-                        {accomplishment.files && (
-                          <div
-                            className={`flex items-center text-md ${
-                              accomplishment.files.length > 0
-                                ? "text-muted-foreground"
-                                : "text-gray-300"
-                            }`}
-                          >
-                            <LucideFileText className="h-3 w-3 mr-1" />
-                            {accomplishment.files.length}
-                            {t("accomplishments.files").toLowerCase()}
-                          </div>
-                        )}
-                        {accomplishment.comments && (
-                          <div
-                            className={`flex items-center text-md  ${
-                              accomplishment.comments.length > 0
-                                ? "text-muted-foreground"
-                                : "text-gray-300"
-                            }`}
-                          >
-                            {accomplishment.comments.length}
-                            {t("accomplishments.comments").toLowerCase()}
-                          </div>
-                        )}
-                        <div className="flex flex-col justify-center items-center gap-3">
-                          <div
-                            className={`px-2 self-start rounded-xl
-                        ${
-                          accomplishment.status === "reviewed"
-                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                            : accomplishment.status === "needs_modification"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-amber-100 text-amber-800"
-                        }
-                        `}
-                          >
-                            {accomplishment.status === "reviewed" ? (
-                              <span className="flex items-center gap-1">
-                                {t("accomplishments.reviewed")}
-                              </span>
-                            ) : accomplishment.status ===
-                              "needs_modification" ? (
-                              <span className="flex items-center gap-1">
-                                {t("accomplishments.needsModification")}
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                {t("accomplishments.notReviewed")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </div>
+      {/* Accomplishments Grid */}
+      <div className="flex flex-wrap justify-center gap-3 mx-auto">
+        {filteredAccomplishments.length > 0 ? (
+          filteredAccomplishments.map((accomplishment) => (
+            <AccomplishmentCard
+              key={accomplishment._id}
+              accomplishment={accomplishment}
+              isManager={isManager}
+              t={t}
+            />
+          ))
+        ) : (
+          <Card className="glass-card border-none">
+            <CardContent className="py-8 text-center text-muted-foreground">
+              <p className="mb-4">{t("accomplishments.noAccomplishments")}</p>
+              {!isManager && (
+                <Link to={ROUTES.ACCOMPLISHMENTS_ADD}>
+                  <Button className="glass-btn">
+                    {t("accomplishments.add")}
+                  </Button>
                 </Link>
-                {/* <CardFooter className="pt-0">
-                      
-                        <Button>{t("common.view")}</Button>
-                      </Link>
-                    </CardFooter> */}
-              </Card>
-            ))
-          ) : (
-            <Card className="glass-card border-none">
-              <CardContent className="py-8 text-center text-muted-foreground">
-                {t("accomplishments.noAccomplishments")}
-                <div className="mt-4">
-                  <Link to="/accomplishments/add">
-                    <Button className="glass-btn">
-                      {t("accomplishments.add")}
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 };

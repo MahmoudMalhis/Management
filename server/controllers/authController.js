@@ -1,9 +1,11 @@
 const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 const { User, Accomplishment, Notification } = require("../models");
+
+// ✅ دالة موحدة لإرسال الاستجابة مع التوكن
 const sendTokenResponse = (user, statusCode, res) => {
   const token = jwt.sign(
-    { id: user._id },
+    { id: user._id }, // ✅ استخدام _id بشكل متسق
     process.env.JWT_SECRET || "dev_secret",
     {
       expiresIn: "30d",
@@ -14,19 +16,23 @@ const sendTokenResponse = (user, statusCode, res) => {
     success: true,
     token,
     user: {
-      _id: String(user._id),
-      id: String(user._id),
+      _id: String(user._id), // ✅ تحويل إلى string للثبات
+      id: String(user._id), // ✅ إضافة id للتوافق مع الواجهة
       name: user.name,
       role: user.role,
     },
   });
 };
 
-exports.login = async (req, res) => {
+exports.login = async (req, res, next) => {
+  // ✅ إضافة next للاستفادة من معالج الأخطاء
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({
+        success: false, // ✅ إضافة success للتوحيد
+        errors: errors.array(),
+      });
     }
 
     const { name, password } = req.body;
@@ -76,16 +82,20 @@ exports.login = async (req, res) => {
 
     sendTokenResponse(user, 200, res);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server Error" });
+    // ✅ تمرير الخطأ لمعالج الأخطاء الموحد
+    next(err);
   }
 };
 
-exports.registerEmployee = async (req, res) => {
+exports.registerEmployee = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
     }
 
     const { name, password } = req.body;
@@ -104,7 +114,8 @@ exports.registerEmployee = async (req, res) => {
     });
 
     const userResponse = {
-      id: user._id,
+      id: String(user._id), // ✅ تحويل إلى string
+      _id: String(user._id), // ✅ إضافة _id للتوحيد
       name: user.name,
       role: user.role,
       createdAt: user.createdAt,
@@ -115,16 +126,13 @@ exports.registerEmployee = async (req, res) => {
       user: userResponse,
     });
   } catch (err) {
-    console.error("Error registering employee:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message || "Server Error",
-      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-    });
+    // ✅ استخدام معالج الأخطاء الموحد بدلاً من console.error مخصص
+    next(err);
   }
 };
 
-exports.getMe = async (req, res) => {
+exports.getMe = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const user = await User.findByPk(req.user.id, {
       attributes: { exclude: ["password"] },
@@ -134,12 +142,12 @@ exports.getMe = async (req, res) => {
       user,
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server Error" });
+    next(err); // ✅ استخدام معالج الأخطاء الموحد
   }
 };
 
-exports.getEmployees = async (req, res) => {
+exports.getEmployees = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { status } = req.query;
     const filter = { role: "employee" };
@@ -158,14 +166,14 @@ exports.getEmployees = async (req, res) => {
       data: employees,
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server Error" });
+    next(err); // ✅ استخدام معالج الأخطاء الموحد
   }
 };
 
-exports.getEmployeeById = async (req, res) => {
+exports.getEmployeeById = async (req, res, next) => {
+  // ✅ إضافة next
   try {
-    const id = Number(req.params.id); // تأكد أنه رقم
+    const id = Number(req.params.id);
     const user = await User.findByPk(id, {
       attributes: ["_id", "name", "role", "status", "createdAt"],
     });
@@ -177,8 +185,7 @@ exports.getEmployeeById = async (req, res) => {
       });
     }
 
-    // لو بدك ترجّع فقط الموظفين، خليه 404 إذا ليس موظف
-    // إذا بدك ترجع أي مستخدم، احذف هذا الشرط.
+    // ✅ فحص الدور بطريقة أوضح
     if (user.role !== "employee") {
       return res.status(404).json({
         success: false,
@@ -189,8 +196,8 @@ exports.getEmployeeById = async (req, res) => {
     return res.json({
       success: true,
       data: {
-        id: String(user._id),
-        _id: String(user._id), // للتماشي مع الواجهة
+        id: String(user._id), // ✅ تحويل إلى string
+        _id: String(user._id), // ✅ إضافة _id للتوحيد
         name: user.name,
         role: user.role,
         status: user.status,
@@ -198,21 +205,24 @@ exports.getEmployeeById = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ success: false, message: "Server Error" });
+    next(err); // ✅ استخدام معالج الأخطاء الموحد
   }
 };
 
-exports.deleteEmployee = async (req, res) => {
+exports.deleteEmployee = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { id } = req.params;
-    const mode = (req.query.mode || "archive").toLowerCase(); // 'hard' | 'archive'
+    const mode = (req.query.mode || "archive").toLowerCase();
 
     const user = await User.findByPk(id);
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     if (user.role !== "employee") {
       return res.status(400).json({
         success: false,
@@ -221,6 +231,7 @@ exports.deleteEmployee = async (req, res) => {
     }
 
     if (mode === "hard") {
+      // ✅ استخدام Promise.all لتحسين الأداء
       await Promise.all([
         Accomplishment.destroy({ where: { employee: id } }),
         Notification.destroy({ where: { user: id } }),
@@ -232,6 +243,7 @@ exports.deleteEmployee = async (req, res) => {
       });
     }
 
+    // ✅ تحديث حالة الموظف بدلاً من الحذف
     user.status = "archived";
     user.disabledLogin = true;
     await user.save();
@@ -239,43 +251,50 @@ exports.deleteEmployee = async (req, res) => {
     return res.json({
       success: true,
       message: "Employee archived",
-      data: { id: user._id },
+      data: { id: String(user._id) }, // ✅ تحويل إلى string
     });
   } catch (err) {
-    console.error("deleteEmployee error:", err);
-    return res.status(500).json({ success: false, message: "Server Error" });
+    next(err); // ✅ استخدام معالج الأخطاء الموحد
   }
 };
 
-exports.unarchiveEmployee = async (req, res) => {
+exports.unarchiveEmployee = async (req, res, next) => {
+  // ✅ إضافة next
   try {
     const { id } = req.params;
-    const emp = await User.findByPk(id);
-    if (!emp)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    if (emp.role !== "employee")
-      return res
-        .status(400)
-        .json({ success: false, message: "Only employees can be unarchived" });
+    const employee = await User.findByPk(id);
 
-    emp.status = "active";
-    emp.disabledLogin = false;
-    await emp.save();
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (employee.role !== "employee") {
+      return res.status(400).json({
+        success: false,
+        message: "Only employees can be unarchived",
+      });
+    }
+
+    // ✅ استعادة حالة الموظف
+    employee.status = "active";
+    employee.disabledLogin = false;
+    await employee.save();
 
     res.json({
       success: true,
       message: "Employee restored",
       data: {
-        id: emp._id,
-        name: emp.name,
-        role: emp.role,
-        status: emp.status,
+        id: String(employee._id), // ✅ تحويل إلى string
+        _id: String(employee._id), // ✅ إضافة _id للتوحيد
+        name: employee.name,
+        role: employee.role,
+        status: employee.status,
       },
     });
   } catch (err) {
-    console.error("unarchiveEmployee error:", err);
-    res.status(500).json({ success: false, message: "Server Error" });
+    next(err); // ✅ استخدام معالج الأخطاء الموحد
   }
 };

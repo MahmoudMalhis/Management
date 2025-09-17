@@ -1,65 +1,87 @@
 const { Accomplishment, TaskTitle, User } = require("../../models");
 
-const toArray = (v) => (Array.isArray(v) ? v : []);
+// ✅ دالة موحدة لتحويل القيم إلى مصفوفات
+const toArray = (value) => (Array.isArray(value) ? value : []);
 
-module.exports = async function getAccomplishment(req, res) {
+module.exports = async function getAccomplishment(req, res, next) {
+  // ✅ إضافة next
   try {
-    const acc = await Accomplishment.findByPk(req.params.id, {
+    const accomplishment = await Accomplishment.findByPk(req.params.id, {
       include: [
         {
           model: User,
           as: "employeeInfo",
           attributes: ["_id", "name", "role", "status"],
         },
-        { model: TaskTitle, as: "taskTitleInfo", attributes: ["_id", "name"] },
+        {
+          model: TaskTitle,
+          as: "taskTitleInfo",
+          attributes: ["_id", "name"],
+        },
       ],
     });
 
-    if (!acc)
-      return res
-        .status(404)
-        .json({ success: false, message: "Accomplishment not found" });
+    if (!accomplishment) {
+      return res.status(404).json({
+        success: false,
+        message: "Accomplishment not found",
+      });
+    }
 
-    if (
-      req.user.role !== "manager" &&
-      String(acc.employee) !== String(req.user.id)
-    ) {
+    // ✅ التحقق من الصلاحيات بطريقة أوضح
+    const isAuthorized =
+      req.user.role === "manager" ||
+      String(accomplishment.employee) === String(req.user.id);
+
+    if (!isAuthorized) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to access this accomplishment",
       });
     }
 
+    // ✅ تكوين البيانات المُرجعة بطريقة موحدة
     const data = {
-      _id: acc._id,
-      employee: acc.employeeInfo
+      _id: accomplishment._id,
+      employee: accomplishment.employeeInfo
         ? {
-            _id: acc.employeeInfo._id,
-            name: acc.employeeInfo.name,
-            role: acc.employeeInfo.role,
+            _id: accomplishment.employeeInfo._id,
+            name: accomplishment.employeeInfo.name,
+            role: accomplishment.employeeInfo.role,
+            status: accomplishment.employeeInfo.status, // ✅ إضافة status
           }
-        : { _id: String(acc.employee), name: "Unknown" },
-      taskTitle: acc.taskTitleInfo
-        ? { _id: acc.taskTitleInfo._id, name: acc.taskTitleInfo.name }
-        : { _id: String(acc.taskTitle), name: "Unknown" },
-      description: acc.description,
-      files: toArray(acc.files),
-      originalDescription: acc.originalDescription,
-      originalFiles: toArray(acc.originalFiles),
-      employeeDescription: acc.employeeDescription,
-      employeeFiles: toArray(acc.employeeFiles),
-      status: acc.status,
-      lastContentModifiedAt: acc.lastContentModifiedAt,
-      createdAt: acc.createdAt,
-      previousVersions: toArray(acc.previousVersions),
-      comments: toArray(acc.comments),
+        : {
+            _id: String(accomplishment.employee),
+            name: "Unknown",
+            role: "unknown",
+            status: "unknown",
+          },
+      taskTitle: accomplishment.taskTitleInfo
+        ? {
+            _id: accomplishment.taskTitleInfo._id,
+            name: accomplishment.taskTitleInfo.name,
+          }
+        : {
+            _id: String(accomplishment.taskTitle),
+            name: "Unknown",
+          },
+      description: accomplishment.description,
+      files: toArray(accomplishment.files),
+      originalDescription: accomplishment.originalDescription,
+      originalFiles: toArray(accomplishment.originalFiles),
+      employeeDescription: accomplishment.employeeDescription,
+      employeeFiles: toArray(accomplishment.employeeFiles),
+      status: accomplishment.status,
+      lastContentModifiedAt: accomplishment.lastContentModifiedAt,
+      createdAt: accomplishment.createdAt,
+      previousVersions: toArray(accomplishment.previousVersions),
+      comments: toArray(accomplishment.comments),
     };
 
     return res.json({ success: true, data });
   } catch (err) {
+    // ✅ استخدام معالج الأخطاء الموحد مع تسجيل أفضل للأخطاء
     console.error("GET_ACCOMPLISHMENT_ERROR:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: err.message || "Server Error" });
+    next(err);
   }
 };
