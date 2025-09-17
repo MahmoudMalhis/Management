@@ -1,4 +1,4 @@
-// ✅ FIXED: تحديث AddEmployee مع جميع التحسينات المطلوبة
+// ✅ FIXED: تحسين AddEmployee مع نظام التحقق المحسن
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -28,12 +28,10 @@ import FormCard from "@/components/FormCard";
 import FormActions from "@/components/FormActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-// ✅ FIXED: قواعد التحقق للنموذج
+// ✅ FIXED: قواعد التحقق المحسنة
 const getValidationRules = (t: any) => ({
   name: {
-    ...commonValidationRules.required(
-      t("employees.name") + " " + t("common.required")
-    ),
+    ...commonValidationRules.required(t("employees.name") + " مطلوب"),
     ...commonValidationRules.minLength(
       2,
       t("employees.name") + " يجب أن يكون حرفين على الأقل"
@@ -44,34 +42,32 @@ const getValidationRules = (t: any) => ({
     ),
   },
   password: {
-    ...commonValidationRules.password(6, t("employees.passwordMinLength")),
+    ...commonValidationRules.required("كلمة المرور مطلوبة"),
+    ...commonValidationRules.minLength(6, t("employees.passwordMinLength")),
   },
   confirmPassword: {
     ...commonValidationRules.required("تأكيد كلمة المرور مطلوب"),
-    custom: (value: string, values?: EmployeeFormData) => {
-      if (value !== values?.password) {
-        return "كلمة المرور غير متطابقة";
-      }
-      return null;
-    },
+    ...commonValidationRules.confirmPassword(
+      "password",
+      "كلمة المرور غير متطابقة"
+    ),
   },
 });
 
-// ✅ FIXED: المكون الرئيسي مع التحسينات
+// ✅ FIXED: المكون الرئيسي مع logic مبسط
 const AddEmployee: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  // ✅ FIXED: استخدام hook التحقق من النماذج
+  // ✅ FIXED: استخدام hook التحقق من النماذج المحسن
   const {
     values,
     errors,
+    touched,
     isSubmitting,
-    isValid,
     handleChange,
+    handleBlur,
     handleSubmit,
-    setFieldError,
-    getFieldProps,
     setIsSubmitting,
   } = useFormValidation<EmployeeFormData>(
     {
@@ -82,23 +78,14 @@ const AddEmployee: React.FC = () => {
     getValidationRules(t)
   );
 
-  // ✅ FIXED: التحقق المخصص لتطابق كلمات المرور
-  const validatePasswordConfirmation = useCallback(() => {
-    if (values.password !== values.confirmPassword && values.confirmPassword) {
-      setFieldError("confirmPassword", "كلمة المرور غير متطابقة");
-      return false;
-    }
-    return true;
-  }, [values.password, values.confirmPassword, setFieldError]);
+  // ✅ FIXED: معالج الإلغاء
+  const handleCancel = useCallback(() => {
+    navigate(ROUTES.EMPLOYEES);
+  }, [navigate]);
 
-  // ✅ FIXED: معالج إرسال النموذج
+  // ✅ FIXED: معالج إرسال النموذج المبسط
   const onSubmit = useCallback(
     async (formData: EmployeeFormData) => {
-      // التحقق الإضافي
-      if (!validatePasswordConfirmation()) {
-        return;
-      }
-
       try {
         setIsSubmitting(true);
 
@@ -121,31 +108,17 @@ const AddEmployee: React.FC = () => {
         setIsSubmitting(false);
       }
     },
-    [validatePasswordConfirmation, setIsSubmitting, t, navigate]
+    [setIsSubmitting, t, navigate]
   );
 
-  // ✅ FIXED: معالج الإلغاء
-  const handleCancel = useCallback(() => {
-    navigate(ROUTES.EMPLOYEES);
-  }, [navigate]);
-
-  // ✅ FIXED: معالج تغيير كلمة المرور للتحقق من التطابق
-  const handlePasswordChange = useCallback(
-    (field: "password" | "confirmPassword") =>
-      (event: React.ChangeEvent<HTMLInputElement>) => {
-        handleChange(field)(event);
-
-        // إزالة خطأ التطابق عند تغيير أي من الحقلين
-        if (errors.confirmPassword && field === "password") {
-          setFieldError("confirmPassword", "");
-        }
-      },
-    [handleChange, handlePasswordChange, errors.confirmPassword, setFieldError]
+  // ✅ FIXED: التحقق من وجود أخطاء للعرض
+  const hasVisibleErrors = Object.keys(errors).some(
+    (key) => touched[key] && errors[key]
   );
 
   return (
     <div className="max-w-2xl mx-auto p-4">
-      {/* ✅ FIXED: زر العودة مع استخدام الثوابت */}
+      {/* زر العودة */}
       <Button
         variant="ghost"
         className="mb-4 flex items-center gap-1 glass-btn"
@@ -155,7 +128,7 @@ const AddEmployee: React.FC = () => {
         {t("common.back")}
       </Button>
 
-      {/* ✅ FIXED: النموذج مع التحسينات */}
+      {/* النموذج */}
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
         <FormCard
           title={t("employees.add")}
@@ -171,8 +144,8 @@ const AddEmployee: React.FC = () => {
             />
           }
         >
-          {/* ✅ FIXED: عرض الأخطاء العامة */}
-          {Object.keys(errors).length > 0 && (
+          {/* ✅ FIXED: عرض تحذير الأخطاء فقط إذا كان هناك أخطاء فعلية مرئية */}
+          {hasVisibleErrors && (
             <Alert variant="destructive" className="glass-card">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
@@ -181,7 +154,7 @@ const AddEmployee: React.FC = () => {
             </Alert>
           )}
 
-          {/* ✅ FIXED: حقل الاسم مع التحقق */}
+          {/* حقل الاسم */}
           <div className="space-y-2">
             <Label htmlFor="name" className="glassy-text">
               {t("employees.name")} *
@@ -190,16 +163,20 @@ const AddEmployee: React.FC = () => {
               id="name"
               type="text"
               placeholder={t("employees.name")}
-              className={`glass-input ${errors.name ? "border-red-500" : ""}`}
+              className={`glass-input ${
+                touched.name && errors.name ? "border-red-500" : ""
+              }`}
               disabled={isSubmitting}
-              {...getFieldProps("name")}
+              value={values.name}
+              onChange={handleChange("name")}
+              onBlur={handleBlur("name")}
             />
-            {errors.name && (
+            {touched.name && errors.name && (
               <p className="text-sm text-red-600 mt-1">{errors.name}</p>
             )}
           </div>
 
-          {/* ✅ FIXED: حقل كلمة المرور مع التحقق */}
+          {/* حقل كلمة المرور */}
           <div className="space-y-2">
             <Label htmlFor="password" className="glassy-text">
               {t("employees.password")} *
@@ -209,14 +186,15 @@ const AddEmployee: React.FC = () => {
               type="password"
               placeholder={t("employees.password")}
               className={`glass-input ${
-                errors.password ? "border-red-500" : ""
+                touched.password && errors.password ? "border-red-500" : ""
               }`}
               disabled={isSubmitting}
               autoComplete="new-password"
-              {...getFieldProps("password")}
-              onChange={handlePasswordChange("password")}
+              value={values.password}
+              onChange={handleChange("password")}
+              onBlur={handleBlur("password")}
             />
-            {errors.password && (
+            {touched.password && errors.password && (
               <p className="text-sm text-red-600 mt-1">{errors.password}</p>
             )}
             <p className="text-xs text-muted-foreground">
@@ -224,7 +202,7 @@ const AddEmployee: React.FC = () => {
             </p>
           </div>
 
-          {/* ✅ FIXED: حقل تأكيد كلمة المرور مع التحقق */}
+          {/* حقل تأكيد كلمة المرور */}
           <div className="space-y-2">
             <Label htmlFor="confirmPassword" className="glassy-text">
               {t("employees.confirmPassword")} *
@@ -234,21 +212,24 @@ const AddEmployee: React.FC = () => {
               type="password"
               placeholder={t("employees.confirmPassword")}
               className={`glass-input ${
-                errors.confirmPassword ? "border-red-500" : ""
+                touched.confirmPassword && errors.confirmPassword
+                  ? "border-red-500"
+                  : ""
               }`}
               disabled={isSubmitting}
               autoComplete="new-password"
-              {...getFieldProps("confirmPassword")}
-              onChange={handlePasswordChange("confirmPassword")}
+              value={values.confirmPassword}
+              onChange={handleChange("confirmPassword")}
+              onBlur={handleBlur("confirmPassword")}
             />
-            {errors.confirmPassword && (
+            {touched.confirmPassword && errors.confirmPassword && (
               <p className="text-sm text-red-600 mt-1">
                 {errors.confirmPassword}
               </p>
             )}
           </div>
 
-          {/* ✅ FIXED: معلومات إضافية */}
+          {/* معلومات إضافية */}
           <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
             <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">
               ملاحظات هامة:

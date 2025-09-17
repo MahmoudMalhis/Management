@@ -67,8 +67,14 @@ const EmployeeList = () => {
         setLoading(true);
         setError(null);
         const response = await authAPI.getEmployees({ status: "active" });
+
+        // مرن: يتعامل مع احتمال يكون في data أو مصفوفة مباشرة
+        const employeesArray = Array.isArray(response)
+          ? response
+          : response.data || [];
+
         setEmployees(
-          (response.data || []).map((emp: any) => ({
+          employeesArray.map((emp: any) => ({
             ...emp,
             id: emp._id || emp.id,
           }))
@@ -79,6 +85,7 @@ const EmployeeList = () => {
         setLoading(false);
       }
     };
+
     fetchEmployees();
   }, [t]);
 

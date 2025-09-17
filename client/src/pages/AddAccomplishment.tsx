@@ -90,16 +90,13 @@ const AddAccomplishment = () => {
         formData.append("employee", selectedEmployee);
       }
 
-      const response = await accomplishmentsAPI.createAccomplishment(formData);
+      const created = await accomplishmentsAPI.createAccomplishment(formData);
 
       sendNewAccomplishment({
-        _id: response.data._id,
-        description: response.data.description,
-        employee: {
-          _id: user?.id,
-          name: user?.name,
-        },
-        createdAt: response.data.createdAt,
+        _id: created._id,
+        description: created.description,
+        employee: created.employeeInfo,
+        createdAt: created.createdAt,
       });
 
       toast(t("common.success"), {

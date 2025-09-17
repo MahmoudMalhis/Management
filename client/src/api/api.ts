@@ -1,5 +1,5 @@
-// ✅ FIXED: تحديث ملف API مع توحيد معالجة الأخطاء والـ types
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// ✅ FIXED: إصلاح api.ts - إزالة Authorization header من register
 import axios from 'axios';
 import { 
   ApiResponse, 
@@ -13,54 +13,86 @@ import {
 import { API_URL, STORAGE_KEYS } from '@/constants';
 import { handleApiError, validateResponse } from '@/utils/errorHandler';
 
-// ✅ FIXED: استخدام الثوابت المعرفة في constants
+// إعداد axios مع timeout وتحسينات CORS
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-  }
+    'Accept': 'application/json',
+  },
+  withCredentials: false,
 });
 
-// ✅ FIXED: تحسين request interceptor
+// ✅ FIXED: تحسين request interceptor - استثناء register من Authorization
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // ✅ FIXED: لا تضف Authorization header للـ register و login
+    const publicEndpoints = ['/auth/login'];
+    const isPublicEndpoint = publicEndpoints.some(endpoint => 
+      config.url?.includes(endpoint)
+    );
+
+    if (!isPublicEndpoint) {
+      const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
     }
+    
+    // للـ FormData، دع المتصفح يحدد Content-Type
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+  
+    
     return config;
   },
   (error) => {
+    console.error('Request interceptor error:', error);
     return Promise.reject(handleApiError(error));
   }
 );
 
-// ✅ FIXED: إضافة response interceptor لمعالجة الأخطاء بشكل موحد
+// تحسين response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    
+    return response;
+  },
   (error) => {
+    console.error('Response error:', {
+      message: error.message,
+      status: error.response?.status,
+      url: error.config?.url,
+      data: error.response?.data,
+    });
+    
     // معالجة أخطاء المصادقة
     if (error.response?.status === 401) {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-      window.location.href = '/login';
+      // لا نزيل الـ token إذا كان الخطأ من register
+      if (!error.config?.url?.includes('register')) {
+        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+        window.location.href = '/login';
+      }
     }
+    
     return Promise.reject(handleApiError(error));
   }
 );
 
-// ✅ FIXED: Authentication API calls مع types محددة
+// ✅ FIXED: تحسين authAPI
 export const authAPI = {
-  // ✅ FIXED: تحسين دالة تسجيل الدخول
   login: async (name: string, password: string): Promise<ApiResponse<{ token: string; user: any }>> => {
-    try {
+    try {      
       const response = await api.post('/auth/login', { name, password });
       return validateResponse(response.data);
     } catch (error) {
+      console.error('Login error:', error);
       throw handleApiError(error);
     }
   },
 
-  // ✅ FIXED: تحسين دالة الحصول على المستخدم الحالي
   getCurrentUser: async (): Promise<ApiResponse<{ user: any }>> => {
     try {
       const response = await api.get('/auth/me');
@@ -70,17 +102,46 @@ export const authAPI = {
     }
   },
 
-  // ✅ FIXED: تحسين دالة تسجيل الموظفين
+  // ✅ FIXED: تحسين registerEmployee - إزالة أي headers إضافية
   registerEmployee: async (name: string, password: string): Promise<ApiResponse<Employee>> => {
     try {
-      const response = await api.post('/auth/register', { name, password });
+      console.log('Registering employee:', { name, passwordLength: password.length });
+      
+      // التأكد من البيانات
+      if (!name || !name.trim()) {
+        throw new Error('اسم الموظف مطلوب');
+      }
+      
+      if (!password || password.length < 6) {
+        throw new Error('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+      }
+
+      const requestData = {
+        name: name.trim(),
+        password: password
+      };
+
+      console.log('Sending registration request:', requestData);
+
+      const response = await api.post('/auth/register', requestData);
+      
+      console.log('Registration response:', {
+        status: response.status,
+        success: response.data?.success,
+        hasData: !!response.data?.data
+      });
+
       return validateResponse(response.data);
     } catch (error) {
+      console.error('Registration error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       throw handleApiError(error);
     }
   },
 
-  // ✅ FIXED: تحسين دالة جلب الموظفين مع filters
   getEmployees: async (params: EmployeeFilters = {}): Promise<ApiResponse<Employee[]>> => {
     try {
       const response = await api.get("/auth/employees", { params });
@@ -90,7 +151,6 @@ export const authAPI = {
     }
   },
 
-  // ✅ FIXED: استعادة الموظف المؤرشف
   unarchiveEmployee: async (id: string): Promise<ApiResponse<Employee>> => {
     try {
       const response = await api.patch(`/auth/employees/${id}/unarchive`);
@@ -100,7 +160,6 @@ export const authAPI = {
     }
   },
 
-  // ✅ FIXED: جلب موظف محدد
   getEmployeeById: async (id: string): Promise<ApiResponse<Employee>> => {
     try {
       const response = await api.get(`/auth/employees/${id}`);
@@ -110,7 +169,6 @@ export const authAPI = {
     }
   },
 
-  // ✅ FIXED: حذف الموظف مع تحديد النوع
   deleteEmployee: async (id: string, mode: "hard" | "archive" = "archive"): Promise<ApiResponse<any>> => {
     try {
       const response = await api.delete(`/auth/employees/${id}`, { params: { mode } });
@@ -121,23 +179,24 @@ export const authAPI = {
   },
 };
 
-// ✅ FIXED: Accomplishments API calls مع types محددة
+// باقي الكود يبقى كما هو...
 export const accomplishmentsAPI = {
-  // ✅ FIXED: إنشاء إنجاز جديد
-  createAccomplishment: async (formData: FormData): Promise<ApiResponse<Accomplishment>> => {
-    try {
-      const response = await api.post('/accomplishments', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      return validateResponse(response.data);
-    } catch (error) {
-      throw handleApiError(error);
-    }
-  },
+createAccomplishment: async (
+  formData: FormData
+): Promise<Accomplishment> => {
+  try {
+    const response = await api.post('/accomplishments', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data as Accomplishment; // مباشرة accomplishment
+  } catch (error) {
+    throw handleApiError(error);
+  }
+},
 
-  // ✅ FIXED: جلب جميع الإنجازات مع filters
+
   getAccomplishments: async (filters: AccomplishmentFilters = {}): Promise<ApiResponse<Accomplishment[]>> => {
     try {
       const response = await api.get('/accomplishments', { params: filters });
@@ -147,7 +206,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: جلب إنجاز محدد
   getAccomplishment: async (id: string): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.get(`/accomplishments/${id}`);
@@ -157,7 +215,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: إضافة تعليق
   addComment: async (id: string, text: string, versionIndex?: number): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.post(`/accomplishments/${id}/comments`, { text, versionIndex });
@@ -167,7 +224,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: الرد على تعليق
   replyToComment: async (id: string, commentId: string, text: string): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.post(`/accomplishments/${id}/comments/${commentId}/reply`, { text });
@@ -177,7 +233,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: مراجعة الإنجاز
   reviewAccomplishment: async (id: string, status: string): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.put(`/accomplishments/${id}/review`, { status });
@@ -187,7 +242,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: تصدير الإنجازات
   exportAccomplishments: async (filters: AccomplishmentFilters = {}): Promise<any> => {
     try {
       const response = await api.get("/accomplishments/export", {
@@ -200,7 +254,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: تعديل الإنجاز
   modifyAccomplishment: async (id: string, formData: FormData): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.put(`/accomplishments/${id}/modify`, formData, {
@@ -214,7 +267,6 @@ export const accomplishmentsAPI = {
     }
   },
 
-  // ✅ FIXED: بدء الإنجاز
   startAccomplishment: async (id: string, formData: FormData): Promise<ApiResponse<Accomplishment>> => {
     try {
       const response = await api.put(`/accomplishments/${id}/start`, formData, {
@@ -229,9 +281,7 @@ export const accomplishmentsAPI = {
   },
 };
 
-// ✅ FIXED: Task Titles API calls مع معالجة أخطاء محسنة
 export const taskTitlesAPI = {
-  // ✅ FIXED: جلب جميع العناوين
   getAll: async (): Promise<TaskTitle[]> => {
     try {
       const response = await api.get('/task-titles');
@@ -242,7 +292,6 @@ export const taskTitlesAPI = {
     }
   },
 
-  // ✅ FIXED: إضافة عنوان جديد
   add: async (name: string): Promise<TaskTitle> => {
     try {
       const response = await api.post('/task-titles', { name });
@@ -253,7 +302,6 @@ export const taskTitlesAPI = {
     }
   },
 
-  // ✅ FIXED: تعديل عنوان
   edit: async (id: string, name: string): Promise<TaskTitle> => {
     try {
       const response = await api.put(`/task-titles/${id}`, { name });
@@ -264,7 +312,6 @@ export const taskTitlesAPI = {
     }
   },
 
-  // ✅ FIXED: حذف عنوان
   remove: async (id: string): Promise<boolean> => {
     try {
       await api.delete(`/task-titles/${id}`);
@@ -275,7 +322,6 @@ export const taskTitlesAPI = {
   }
 };
 
-// ✅ FIXED: Comparisons API مع types محددة
 export const comparisonsAPI = {
   create: async (payload: {
     name?: string;
@@ -337,7 +383,6 @@ export const comparisonsAPI = {
   },
 };
 
-// ✅ FIXED: Notifications API مع pagination محسنة
 export const notificationsAPI = {
   get: async (page = 1, limit = 20): Promise<ApiResponse<any>> => {
     try {

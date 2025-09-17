@@ -18,25 +18,7 @@ import {
   LucideFileCheck,
   LucideFileText,
 } from "lucide-react";
-
-interface Accomplishment {
-  _id: string;
-  description: string;
-  status: "pending" | "reviewed" | "needs_modification";
-  createdAt: string;
-  updatedAt: string;
-  files: Array<{ _id: string; fileName: string; filePath: string }>;
-  comments: Array<{ _id: string; text: string; createdAt: string }>;
-  employeeInfo: {
-    _id: string;
-    name: string;
-  };
-  lastContentModifiedAt;
-  taskTitleInfo: {
-    _id: string;
-    name: string;
-  };
-}
+import type { Accomplishment } from "@/types";
 
 interface DashboardStats {
   totalEmployees: number;
@@ -70,8 +52,10 @@ const Dashboard = () => {
 
         let employeeCount = 0;
         if (isManager) {
-          const employeesResponse = await authAPI.getEmployees();
-          employeeCount = employeesResponse.count || 0;
+          const employeesArray = await authAPI.getEmployees();
+          employeeCount = Array.isArray(employeesArray)
+            ? employeesArray.length
+            : 0;
         }
 
         // **هنا فقط قمنا بحذف الفلترة**

@@ -35,8 +35,9 @@ const ArchivedEmployees = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await authAPI.getEmployees({ status: "archived" });
-      setEmployees(res.data || []);
+
+      const employeesArray = await authAPI.getEmployees({ status: "archived" });
+      setEmployees(Array.isArray(employeesArray) ? employeesArray : []);
     } catch (err: any) {
       setError(err.message || "فشل التحميل");
     } finally {
@@ -48,19 +49,41 @@ const ArchivedEmployees = () => {
     load();
   }, []);
 
-  const handleRestore = async (id: string, name: string) => {
-    const ok = window.confirm(`استعادة الموظف "${name}" وتمكين دخوله؟`);
-    if (!ok) return;
-    try {
-      setRestoringId(id);
-      await authAPI.unarchiveEmployee(id);
-      toast.success("تمت الاستعادة بنجاح");
-      setEmployees((prev) => prev.filter((e) => e._id !== id));
-    } catch (err: any) {
-      toast.error(err.message || "فشل استعادة الموظف");
-    } finally {
-      setRestoringId(null);
-    }
+  const handleRestore = (id: string, name: string) => {
+    toast(
+      <div className="flex flex-col gap-2">
+        <p className="text-sm">هل تريد استعادة الموظف "{name}" وتمكين دخوله؟</p>
+        <div className="flex gap-2 mt-2">
+          <Button
+            size="sm"
+            className="glass-btn"
+            onClick={async () => {
+              toast.dismiss(); // إغلاق كل التوستات المفتوحة
+              try {
+                setRestoringId(id);
+                await authAPI.unarchiveEmployee(id);
+                setEmployees((prev) => prev.filter((e) => e._id !== id));
+                toast.success("تمت الاستعادة بنجاح");
+              } catch (err: any) {
+                toast.error(err.message || "فشل استعادة الموظف");
+              } finally {
+                setRestoringId(null);
+              }
+            }}
+          >
+            ✅ استعادة
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="glass-btn"
+            onClick={() => toast.dismiss()}
+          >
+            ❌ إلغاء
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   return (

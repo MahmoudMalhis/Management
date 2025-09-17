@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// ✅ FIXED: إنشاء hook موحد للتحقق من صحة النماذج
-// يحل مشكلة تكرار كود التحقق من النماذج
-
+// ✅ FIXED: إصلاح useFormValidation مع logic محسن
 import { useState, useCallback, useMemo } from 'react';
 import { isValidEmail, isValidPassword, removeExtraSpaces } from '@/utils/helpers';
 
@@ -13,7 +11,7 @@ export interface ValidationRule {
   pattern?: RegExp;
   email?: boolean;
   password?: boolean;
-  custom?: (value: any) => string | null;
+  custom?: (value: any, allValues?: any) => string | null;
   message?: string;
 }
 
@@ -29,7 +27,7 @@ export interface FormValues {
   [key: string]: any;
 }
 
-// ✅ FIXED: Hook للتحقق من النماذج
+// ✅ FIXED: Hook للتحقق من النماذج مع إصلاحات
 export const useFormValidation = <T extends FormValues>(
   initialValues: T,
   validationRules: ValidationRules = {}
@@ -39,8 +37,8 @@ export const useFormValidation = <T extends FormValues>(
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ FIXED: التحقق من حقل واحد
-  const validateField = useCallback((name: string, value: any): string => {
+  // ✅ FIXED: التحقق من حقل واحد مع تمرير جميع القيم
+  const validateField = useCallback((name: string, value: any, allValues = values): string => {
     const rule = validationRules[name];
     if (!rule) return '';
 
@@ -81,16 +79,16 @@ export const useFormValidation = <T extends FormValues>(
       return rule.message || `${name} غير صالح`;
     }
 
-    // Custom validation
+    // ✅ FIXED: Custom validation مع تمرير جميع القيم
     if (rule.custom) {
-      const customError = rule.custom(value);
+      const customError = rule.custom(value, allValues);
       if (customError) {
         return customError;
       }
     }
 
     return '';
-  }, [validationRules]);
+  }, [validationRules, values]);
 
   // ✅ FIXED: التحقق من جميع الحقول
   const validateAll = useCallback((): boolean => {
@@ -98,7 +96,7 @@ export const useFormValidation = <T extends FormValues>(
     let isValid = true;
 
     Object.keys(validationRules).forEach(fieldName => {
-      const error = validateField(fieldName, values[fieldName]);
+      const error = validateField(fieldName, values[fieldName], values);
       if (error) {
         newErrors[fieldName] = error;
         isValid = false;
@@ -109,20 +107,29 @@ export const useFormValidation = <T extends FormValues>(
     return isValid;
   }, [values, validationRules, validateField]);
 
-  // ✅ FIXED: تحديث قيمة حقل
+  // ✅ FIXED: تحديث قيمة حقل مع تنظيف الأخطاء
   const setValue = useCallback((name: string, value: any) => {
-    setValues(prev => ({ ...prev, [name]: value }));
+    const newValues = { ...values, [name]: value };
+    setValues(newValues);
     
-    // Clear error when user starts typing
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+    // ✅ FIXED: إعادة التحقق من الحقل مع القيم الجديدة فقط إذا تم لمسه
+    if (touched[name]) {
+      const error = validateField(name, value, newValues);
+      setErrors(prev => ({ ...prev, [name]: error }));
     }
-  }, [errors]);
+
+    // ✅ FIXED: إعادة التحقق من الحقول المترابطة (مثل confirmPassword)
+    if (name === 'password' && touched.confirmPassword) {
+      const confirmPasswordError = validateField('confirmPassword', newValues.confirmPassword, newValues);
+      setErrors(prev => ({ ...prev, confirmPassword: confirmPasswordError }));
+    }
+  }, [values, touched, validateField]);
 
   // ✅ FIXED: تحديث عدة قيم
   const setMultipleValues = useCallback((newValues: Partial<T>) => {
-    setValues(prev => ({ ...prev, ...newValues }));
-  }, []);
+    const updatedValues = { ...values, ...newValues };
+    setValues(updatedValues);
+  }, [values]);
 
   // ✅ FIXED: معالج تغيير الحقل
   const handleChange = useCallback((name: string) => (
@@ -135,11 +142,12 @@ export const useFormValidation = <T extends FormValues>(
     setValue(name, value);
   }, [setValue]);
 
-  // ✅ FIXED: معالج blur للحقل
+  // ✅ FIXED: معالج blur للحقل مع تحسين
   const handleBlur = useCallback((name: string) => () => {
     setTouched(prev => ({ ...prev, [name]: true }));
     
-    const error = validateField(name, values[name]);
+    // التحقق من الحقل فقط عند blur
+    const error = validateField(name, values[name], values);
     setErrors(prev => ({ ...prev, [name]: error }));
   }, [validateField, values]);
 
@@ -168,11 +176,19 @@ export const useFormValidation = <T extends FormValues>(
         event.preventDefault();
       }
 
+      // تعليم جميع الحقول كملموسة
+      const allTouched = Object.keys(validationRules).reduce((acc, key) => {
+        acc[key] = true;
+        return acc;
+      }, {} as Record<string, boolean>);
+      setTouched(allTouched);
+
       setIsSubmitting(true);
 
       try {
         const isValid = validateAll();
         if (!isValid) {
+          console.log('Form validation failed:', errors);
           return;
         }
 
@@ -180,14 +196,16 @@ export const useFormValidation = <T extends FormValues>(
       } finally {
         setIsSubmitting(false);
       }
-    }, [values, validateAll]);
+    }, [values, validationRules, validateAll, errors]);
 
-  // ✅ FIXED: حالة النموذج
+  // ✅ FIXED: حالة النموذج مع تحسين
   const isValid = useMemo(() => {
-    return Object.keys(validationRules).every(fieldName => {
-      return !validateField(fieldName, values[fieldName]);
+    // فقط تحقق من الحقول الملموسة لتجنب عرض أخطاء مبكرة
+    return Object.keys(touched).every(fieldName => {
+      if (!validationRules[fieldName]) return true;
+      return !validateField(fieldName, values[fieldName], values);
     });
-  }, [values, validationRules, validateField]);
+  }, [values, validationRules, validateField, touched]);
 
   const hasErrors = useMemo(() => {
     return Object.values(errors).some(error => !!error);
@@ -279,7 +297,7 @@ export const useSimpleForm = <T extends FormValues>(initialValues: T) => {
   };
 };
 
-// ✅ FIXED: قواعد التحقق الشائعة
+// ✅ FIXED: قواعد التحقق الشائعة مع تحسين
 export const commonValidationRules = {
   required: (message?: string): ValidationRule => ({
     required: true,
@@ -294,7 +312,7 @@ export const commonValidationRules = {
   password: (minLength = 6, message?: string): ValidationRule => ({
     password: true,
     minLength,
-    message: message || `كلمة المرور يجب أن تكون ${minLength} أحرف على الأقل`,
+    message: message || `كلمة المرور يجب أن تكونمن ${minLength} أحرف على الأقل`,
   }),
 
   minLength: (length: number, message?: string): ValidationRule => ({
@@ -307,9 +325,13 @@ export const commonValidationRules = {
     message: message || `يجب أن يكون ${length} أحرف أو أقل`,
   }),
 
-  confirmPassword: (passwordField: string, message?: string): ValidationRule => ({
-    custom: (value: string) => {
-      // This needs to be implemented with access to the form values
+  // ✅ FIXED: تحسين confirmPassword rule
+  confirmPassword: (passwordField: string = 'password', message?: string): ValidationRule => ({
+    custom: (value: string, allValues: any) => {
+      if (!value) return null; // إذا كان فارغ، خلي required rule يتعامل معه
+      if (value !== allValues?.[passwordField]) {
+        return message || 'كلمة المرور غير متطابقة';
+      }
       return null;
     },
     message: message || 'كلمة المرور غير متطابقة',

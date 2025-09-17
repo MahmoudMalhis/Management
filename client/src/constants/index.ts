@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ✅ FIXED: إنشاء ملف constants موحد للثوابت
 // يحل مشكلة تشتت الثوابت وعدم توحيد أسلوب التسمية
 

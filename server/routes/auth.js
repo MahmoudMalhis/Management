@@ -36,9 +36,7 @@ const registerValidationRules = [
     .trim(),
   check("password", "كلمة المرور قصيرة جداً")
     .isLength({ min: 6, max: 128 })
-    .withMessage("كلمة المرور يجب أن تكون بين 6 و 128 حرف")
-    .matches(/^(?=.*[a-zA-Z])(?=.*[0-9])/) // ✅ يجب أن تحتوي على حروف وأرقام
-    .withMessage("كلمة المرور يجب أن تحتوي على حروف وأرقام على الأقل"),
+    .withMessage("كلمة المرور يجب أن تكون أكثر من 6 أحرف"),
 ];
 
 const employeeIdValidationRules = [
