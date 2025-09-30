@@ -7,39 +7,55 @@ import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 
 // ✅ FIXED: دالة موحدة لمعالجة أخطاء الـ API
+// ✅ تحسين معالجة رسائل الأخطاء من السيرفر
 export const handleApiError = (error: any): ApiError => {
-  // التحقق من وجود رسالة خطأ من السيرفر
-  if (error.response?.data?.message) {
-    return {
-      message: error.response.data.message,
-      status: error.response.status,
-      details: error.response.data,
-    };
-  }
+  console.error("API Error:", error);
 
-  // التحقق من وجود رسالة خطأ في الـ response
-  if (error.response?.data) {
+  // إذا كان الخطأ من الشبكة
+  if (!error.response) {
     return {
-      message: error.response.data.message || "حدث خطأ في السيرفر",
-      status: error.response.status,
-      details: error.response.data,
-    };
-  }
-
-  // التحقق من أخطاء الشبكة
-  if (error.code === "NETWORK_ERROR" || !error.response) {
-    return {
-      message: "خطأ في الاتصال بالسيرفر",
+      message: error.message || "خطأ في الاتصال بالسيرفر",
       status: 0,
-      details: error,
+      code: "NETWORK_ERROR",
     };
   }
 
-  // خطأ عام
+  // ✅ استخدام الرسالة من السيرفر إذا كانت موجودة
+  const serverMessage = error.response?.data?.message;
+  const serverErrors = error.response?.data?.errors;
+
+  // إذا كان هناك رسالة واضحة من السيرفر، استخدمها
+  if (serverMessage) {
+    return {
+      message: serverMessage,
+      status: error.response.status,
+      code: error.response.data?.code || "SERVER_ERROR",
+    };
+  }
+
+  // معالجة أخطاء التحقق
+  if (serverErrors && Array.isArray(serverErrors)) {
+    const messages = serverErrors.map((err: any) => err.msg).join(", ");
+    return {
+      message: messages || "خطأ في البيانات المدخلة",
+      status: error.response.status,
+      code: "VALIDATION_ERROR",
+    };
+  }
+
+  // رسائل افتراضية حسب كود الحالة
+  const statusMessages: Record<number, string> = {
+    400: "البيانات المدخلة غير صحيحة",
+    401: "اسم المستخدم أو كلمة المرور غير صحيحة",
+    403: "ليس لديك صلاحية للوصول",
+    404: "الصفحة المطلوبة غير موجودة",
+    500: "حدث خطأ في السيرفر",
+  };
+
   return {
-    message: error.message || "حدث خطأ غير متوقع",
-    status: error.status || 500,
-    details: error,
+    message: statusMessages[error.response.status] || "حدث خطأ غير متوقع",
+    status: error.response.status,
+    code: error.response.data?.code || "UNKNOWN_ERROR",
   };
 };
 

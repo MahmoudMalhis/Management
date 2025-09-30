@@ -35,9 +35,9 @@ export interface Comment {
   replyTo?: string;
   versionIndex?: number;
   commentedBy: {
-    _id: string,
-    name: string,
-    role: "manager" | "employee",
+    _id: string;
+    name: string;
+    role: "manager" | "employee";
   };
 }
 
@@ -60,16 +60,16 @@ export interface Accomplishment {
   comments: Comment[];
   previousVersions?: AccomplishmentVersion[];
   employee: {
-    _id: string,
-    name: string,
+    _id: string;
+    name: string;
   };
   employeeInfo?: {
-    _id: string,
-    name: string,
+    _id: string;
+    name: string;
   };
   taskTitleInfo?: {
-    _id: string,
-    name: string,
+    _id: string;
+    name: string;
   };
 }
 
@@ -80,8 +80,8 @@ export interface Notification {
   isRead: boolean;
   createdAt: string;
   data?: {
-    accomplishmentId?: string,
-    [key: string]: any,
+    accomplishmentId?: string;
+    [key: string]: any;
   };
 }
 
@@ -93,6 +93,8 @@ export interface ApiResponse<T> {
   totalCount?: number;
   totalPages?: number;
   currentPage?: number;
+  token?: string; // إضافة للتوافق المباشر
+  user?: any;
 }
 
 export interface ApiError {
@@ -172,8 +174,8 @@ export interface AccomplishmentSocketData {
   _id: string;
   description: string;
   employee: {
-    _id: string,
-    name: string,
+    _id: string;
+    name: string;
   };
   createdAt: string;
 }

@@ -1,5 +1,6 @@
 const express = require("express");
 const { check } = require("express-validator");
+const { loginLimiter } = require("../middlewares/rateLimiter");
 const {
   login,
   registerEmployee,
@@ -48,7 +49,7 @@ const employeeIdValidationRules = [
 // ✅ Routes مع تحسين التعليقات والترتيب
 
 // تسجيل الدخول
-router.post("/login", loginValidationRules, login);
+router.post("/login", loginLimiter, loginValidationRules, login);
 
 // تسجيل موظف جديد (للمدراء فقط)
 router.post(

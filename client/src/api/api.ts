@@ -70,8 +70,13 @@ api.interceptors.response.use(
     
     // معالجة أخطاء المصادقة
     if (error.response?.status === 401) {
-      // لا نزيل الـ token إذا كان الخطأ من register
-      if (!error.config?.url?.includes('register')) {
+      const publicEndpoints = ['/auth/login', '/auth/register'];
+      const isPublicEndpoint = publicEndpoints.some(endpoint =>
+        error.config?.url?.includes(endpoint)
+      );
+      
+      if (!isPublicEndpoint) {
+        // فقط نحذف التوكن ونعيد التوجيه للصفحات المحمية
         localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
         window.location.href = '/login';
       }

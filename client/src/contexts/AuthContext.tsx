@@ -102,6 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [token]);
 
   // ✅ FIXED: تحسين دالة تسجيل الدخول
+  // ✅ FIXED: تحسين دالة تسجيل الدخول
   const login = useCallback(
     async (name: string, password: string) => {
       try {
@@ -135,7 +136,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           description: apiError.message,
         });
 
-        throw err; // إعادة throw للمكونات التي تستدعي login
+        // ❌ إزالة هذا السطر - هو السبب في تحديث الصفحة
+        // throw err;
       } finally {
         setLoading(false);
       }
@@ -202,7 +204,7 @@ export const usePermissions = () => {
     canExportData: isManager,
     canAccessGallery: isManager,
     canReviewAccomplishments: isManager,
-    canAddAccomplishments: true, // كل المستخدمين يمكنهم إضافة إنجازات
+    canAddAccomplishments: true,
     canViewOwnAccomplishments: true,
     canModifyOwnAccomplishments: user?.role === "employee",
   };

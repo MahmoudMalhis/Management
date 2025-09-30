@@ -1,10 +1,8 @@
-// ✅ FIXED: تحديث AccomplishmentsList مع جميع التحسينات المطلوبة
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-// ✅ FIXED: استيراد Types والثوابت
 import { Accomplishment, Employee, AccomplishmentFilters } from "@/types";
 import { ROUTES } from "@/constants";
 import { authAPI, accomplishmentsAPI } from "@/api/api";
@@ -12,7 +10,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { showErrorToast } from "@/utils/errorHandler";
 import { useAsyncState } from "@/hooks/useAsyncState";
 
-// ✅ FIXED: استيراد مكونات UI
 import {
   Card,
   CardContent,
@@ -40,7 +37,6 @@ import {
   LucideAlertCircle,
 } from "lucide-react";
 
-// ✅ FIXED: تحسين الـ interface للبيانات المحلية
 interface AccomplishmentDisplayData extends Accomplishment {
   employeeInfo: {
     _id: string;
@@ -52,7 +48,6 @@ interface AccomplishmentDisplayData extends Accomplishment {
   };
 }
 
-// ✅ FIXED: مكون منفصل لبطاقة الإنجاز
 const AccomplishmentCard: React.FC<{
   accomplishment: AccomplishmentDisplayData;
   isManager: boolean;
@@ -65,7 +60,6 @@ const AccomplishmentCard: React.FC<{
       day: "numeric",
     });
   }, [accomplishment.createdAt]);
-  // ✅ FIXED: تحسين عرض الحالة مع الألوان
   const getStatusStyles = (status: string) => {
     const styles = {
       reviewed:
@@ -79,7 +73,6 @@ const AccomplishmentCard: React.FC<{
     return styles[status] || styles.pending;
   };
 
-  // ✅ FIXED: تحسين عرض النص
   const getStatusText = (status: string) => {
     const statusMap = {
       reviewed: t("accomplishments.reviewed"),
@@ -142,7 +135,6 @@ const AccomplishmentCard: React.FC<{
   );
 };
 
-// ✅ FIXED: مكون منفصل لفلاتر البحث
 const FiltersCard: React.FC<{
   showFilters: boolean;
   onClose: () => void;
@@ -260,14 +252,12 @@ const FiltersCard: React.FC<{
   );
 };
 
-// ✅ FIXED: المكون الرئيسي مع جميع التحسينات
 const AccomplishmentsList: React.FC = () => {
   const { t } = useTranslation();
   const { isManager } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // ✅ FIXED: استخدام custom hook للحالة
   const {
     data: accomplishments,
     loading,
@@ -279,12 +269,10 @@ const AccomplishmentsList: React.FC = () => {
   const { data: employees, execute: fetchEmployees } =
     useAsyncState<Employee[]>();
 
-  // ✅ FIXED: حالات محلية منظمة
   const [showFilters, setShowFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [filters, setFilters] = useState<AccomplishmentFilters>({});
 
-  // ✅ FIXED: استخراج معاملات URL
   const urlParams = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return {
@@ -293,7 +281,6 @@ const AccomplishmentsList: React.FC = () => {
     };
   }, [location.search]);
 
-  // ✅ FIXED: تحديث الفلاتر من URL
   useEffect(() => {
     const newFilters: AccomplishmentFilters = {};
 
@@ -308,7 +295,6 @@ const AccomplishmentsList: React.FC = () => {
     setFilters(newFilters);
   }, [urlParams]);
 
-  // ✅ FIXED: جلب الموظفين للمدير
   useEffect(() => {
     if (isManager) {
       fetchEmployees(async () => {
@@ -318,33 +304,37 @@ const AccomplishmentsList: React.FC = () => {
     }
   }, [isManager, fetchEmployees]);
 
-  // ✅ FIXED: جلب الإنجازات مع الفلاتر
+  useEffect(() => {
+    console.log("employees updated: ", employees);
+  }, [employees]);
+
   useEffect(() => {
     fetchAccomplishments(async () => {
       const response = await accomplishmentsAPI.getAccomplishments(filters);
-      // Ensure each item has employeeInfo and taskTitleInfo
-      return (response.data || []).map((acc: Accomplishment) => ({
+
+      const accomplishments = Array.isArray(response)
+        ? response
+        : response?.data || [];
+
+      return accomplishments.map((acc: Accomplishment) => ({
         ...acc,
         employeeInfo: acc.employeeInfo ?? { _id: "", name: "" },
-        taskTitleInfo: acc.taskTitleInfo ?? { _id: "", name: "" },
+        taskTitleInfo: acc.taskTitleInfo ?? { _id: "", name: "غير محدد" },
       }));
     });
   }, [filters, fetchAccomplishments]);
 
-  // ✅ FIXED: تحسين دالة التصدير
   const handleExport = useCallback(async () => {
     try {
       setExporting(true);
 
       const response = await accomplishmentsAPI.exportAccomplishments(filters);
 
-      // التحقق من نوع المحتوى
       const contentType = response.headers["content-type"];
       if (contentType && contentType.includes("application/json")) {
         throw new Error("فشل في تصدير البيانات");
       }
 
-      // إنشاء رابط التحميل
       const blob = new Blob([response.data], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
@@ -366,7 +356,6 @@ const AccomplishmentsList: React.FC = () => {
     }
   }, [filters]);
 
-  // ✅ FIXED: تحديث URL عند تغيير الفلاتر
   const updateUrlWithFilters = useCallback(
     (newFilters: AccomplishmentFilters) => {
       const searchParams = new URLSearchParams();
@@ -388,7 +377,6 @@ const AccomplishmentsList: React.FC = () => {
     [navigate]
   );
 
-  // ✅ FIXED: معالج تغيير الفلاتر
   const handleFiltersChange = useCallback(
     (newFilters: AccomplishmentFilters) => {
       setFilters(newFilters);
@@ -397,7 +385,6 @@ const AccomplishmentsList: React.FC = () => {
     [updateUrlWithFilters]
   );
 
-  // ✅ FIXED: فلترة الإنجازات حسب الحالة من URL
   const filteredAccomplishments = useMemo(() => {
     if (!accomplishments) return [];
 
@@ -408,7 +395,6 @@ const AccomplishmentsList: React.FC = () => {
     return accomplishments;
   }, [accomplishments, urlParams.status]);
 
-  // ✅ FIXED: عرض حالة التحميل
   if (loading && !accomplishments) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">
@@ -420,7 +406,6 @@ const AccomplishmentsList: React.FC = () => {
     );
   }
 
-  // ✅ FIXED: عرض حالة الخطأ
   if (error) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">

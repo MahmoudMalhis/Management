@@ -25,12 +25,11 @@ const sendTokenResponse = (user, statusCode, res) => {
 };
 
 exports.login = async (req, res, next) => {
-  // ✅ إضافة next للاستفادة من معالج الأخطاء
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
-        success: false, // ✅ إضافة success للتوحيد
+        success: false,
         errors: errors.array(),
       });
     }
@@ -51,7 +50,7 @@ exports.login = async (req, res, next) => {
         if (user.status === "archived" || user.disabledLogin) {
           return res.status(403).json({
             success: false,
-            message: "Account is archived/disabled",
+            message: "الحساب معطل أو مؤرشف", // ✅ تحسين الرسالة
           });
         }
 
@@ -59,7 +58,7 @@ exports.login = async (req, res, next) => {
       } else {
         return res.status(401).json({
           success: false,
-          message: "Invalid credentials",
+          message: "اسم المستخدم أو كلمة المرور غير صحيحة", // ✅ رسالة واضحة بالعربية
         });
       }
     }
@@ -67,23 +66,27 @@ exports.login = async (req, res, next) => {
     if (user.status === "archived" || user.disabledLogin) {
       return res.status(403).json({
         success: false,
-        message: "Account is archived/disabled",
+        message: "الحساب معطل أو مؤرشف", // ✅ تحسين الرسالة
       });
     }
 
-    const isMatch = await user.matchPassword(password);
+    // ✅ التحقق من كلمة المرور
+    const isPasswordCorrect = await user.matchPassword(password);
 
-    if (!isMatch) {
+    if (!isPasswordCorrect) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials",
+        message: "اسم المستخدم أو كلمة المرور غير صحيحة", // ✅ نفس الرسالة لحماية الأمان
       });
     }
 
-    sendTokenResponse(user, 200, res);
+    return sendTokenResponse(user, 200, res);
   } catch (err) {
-    // ✅ تمرير الخطأ لمعالج الأخطاء الموحد
-    next(err);
+    console.error("Login error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "حدث خطأ أثناء تسجيل الدخول", // ✅ رسالة خطأ عامة بالعربية
+    });
   }
 };
 

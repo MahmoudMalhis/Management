@@ -1,5 +1,6 @@
 const express = require("express");
 const { check } = require("express-validator");
+const { uploadLimiter } = require("../middlewares/rateLimiter");
 const {
   createAccomplishment,
   getAccomplishments,
@@ -82,6 +83,7 @@ const modifyValidationRules = [
 router.post(
   "/",
   protect,
+  uploadLimiter,
   upload.array("files"),
   handleUploadError,
   createValidationRules,
